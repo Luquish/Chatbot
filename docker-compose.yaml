@@ -1,0 +1,22 @@
+version: '3.8'
+services:
+  db:
+    image: postgres:latest
+    restart: always
+    environment:
+      POSTGRES_USER: lucamazzarello_
+      POSTGRES_PASSWORD: proyectotd8
+      POSTGRES_DB: ONWIP
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+    app:
+      build: .
+      volumes:
+        - /data:/app/pdfs
+      ports:
+        - "3000:3000"
+volumes:
+  pgdata:
