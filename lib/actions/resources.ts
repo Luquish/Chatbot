@@ -10,58 +10,82 @@ import { generateEmbeddingsFromPdf, generateEmbeddings } from '../ai/embedding';
 import { embeddings as embeddingsTable } from '../db/schema/embeddings';
 import * as fs from 'fs';
 import crypto from 'crypto';
-import pdfParse from 'pdf-parse';
+import * as pdfjsLib from 'pdfjs-dist'; // Importamos pdfjs-dist correctamente
 import { sql } from 'drizzle-orm';
+
+// Configuración opcional del worker
+pdfjsLib.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.js`;
 
 // Función para generar un hash del contenido
 const generateHash = (content: string): string => {
   return crypto.createHash('sha256').update(content).digest('hex');
 };
 
-// Función para leer el número de páginas del PDF
-const getNumberOfPages = async (filePath: string): Promise<number> => {
-  const dataBuffer = fs.readFileSync(filePath);
-  const data = await pdfParse(dataBuffer);
-  return data.numpages;
+// Función para obtener el número de páginas usando pdfjs-dist
+const getNumberOfPages = async (fileName: string): Promise<number> => {
+  const fullPath = `/app/pdfs/${fileName}`;
+  const dataBuffer = fs.readFileSync(fullPath);
+  const pdfDoc = await pdfjsLib.getDocument({ data: dataBuffer }).promise;
+  return pdfDoc.numPages;
 };
 
-// Función para leer una cantidad específica de páginas del PDF
-const readPdfPages = async (filePath: string, pagesToRead: number[]): Promise<string> => {
-  const dataBuffer = fs.readFileSync(filePath);
-  const data = await pdfParse(dataBuffer);
+interface TextItem {
+    str: string;
+  }
   
+  interface TextMarkedContent {
+    // Define properties of TextMarkedContent if needed
+  }
+  
+  const isTextItem = (item: TextItem | TextMarkedContent): item is TextItem => {
+    return (item as TextItem).str !== undefined;
+  };
+
+// Función para leer una cantidad específica de páginas usando pdfjs-dist
+const readPdfPages = async (fileName: string, pagesToRead: number[]): Promise<string> => {
+  const fullPath = `/app/pdfs/${fileName}`;
+  const dataBuffer = fs.readFileSync(fullPath);
+  const pdfDoc = await pdfjsLib.getDocument({ data: dataBuffer }).promise;
+
   let content = '';
-  pagesToRead.forEach(pageNum => {
-    if (pageNum <= data.numpages) {
-      content += data.text.split('\n\n')[pageNum - 1];  // Tomando la página como un bloque de texto
+  for (const pageNum of pagesToRead) {
+    if (pageNum <= pdfDoc.numPages) {
+      const page = await pdfDoc.getPage(pageNum);
+      const textContent = await page.getTextContent();
+      const pageText = textContent.items
+        .filter(isTextItem)
+        .map(item => item.str)
+        .join(' ');
+    content += pageText + '\n';
+      
     }
-  });
+  }
 
   return content;
 };
 
-// Función para generar un hash condicional
-const generateConditionalHash = async (filePath: string): Promise<string> => {
-  const numPages = await getNumberOfPages(filePath);
+// Función para generar un hash condicional usando pdfjs-dist
+const generateConditionalHash = async (fileName: string): Promise<string> => {
+  const numPages = await getNumberOfPages(fileName);
 
   let contentToHash = '';
 
   if (numPages > 50) {
     // Leer las primeras 3 páginas
-    contentToHash = await readPdfPages(filePath, [1, 2, 3]);
+    contentToHash = await readPdfPages(fileName, [1, 2, 3]);
   } else {
     // Leer todo el documento
-    contentToHash = await fs.promises.readFile(filePath, 'utf-8');
+    contentToHash = await readPdfPages(fileName, Array.from({ length: numPages }, (_, i) => i + 1));
   }
 
   return generateHash(contentToHash);
 };
 
 // Implementación en createResourceFromPDF
-export const createResourceFromPDF = async (filePath: string) => {
+export const createResourceFromPDF = async (fileName: string) => {
   try {
     // Genera el hash condicional
-    const contentHash = await generateConditionalHash(filePath);
+    const contentHash = await generateConditionalHash(fileName);
 
     // Verifica si el hash ya existe en la base de datos
     const existingResource = await db
@@ -76,8 +100,8 @@ export const createResourceFromPDF = async (filePath: string) => {
     }
 
     // Si no existe, proceder a generar los embeddings y guardar en la base de datos
-    const extractedContent = await fs.promises.readFile(filePath, 'utf-8');
-    const embeddings = await generateEmbeddingsFromPdf(filePath);
+    const extractedContent = await readPdfPages(fileName, [1, 2, 3]);
+    const embeddings = await generateEmbeddingsFromPdf(fileName);
 
     const [resource] = await db
       .insert(resources)
@@ -102,45 +126,45 @@ export const createResourceFromPDF = async (filePath: string) => {
 // ------------------------------------------------------------------------------------------
 
 export const createResourceFromText = async (input: NewResourceParams) => {
-    try {
-      const { content } = insertResourceSchema.parse(input);
-  
-      // Genera un hash del contenido
-      const contentHash = generateHash(content);
-  
-      // Verifica si el hash ya existe en la base de datos
-      const existingResource = await db
-        .select()
-        .from(resources)
-        .where(sql`${resources.contentHash} = ${contentHash}`)
-        .limit(1);
-  
-      if (existingResource.length > 0) {
-        console.log('El documento ya ha sido almacenado previamente.');
-        return 'El documento ya ha sido almacenado previamente.';
-      }
-  
-      // Genera los embeddings desde el contenido de texto
-      const embeddings = await generateEmbeddings(content);
-  
-      // Inserta el recurso en la base de datos
-      const [resource] = await db
-        .insert(resources)
-        .values({ content, contentHash })
-        .returning();
-  
-      // Inserta los embeddings en la base de datos
-      await db.insert(embeddingsTable).values(
-        embeddings.map(embedding => ({
-          resourceId: resource.id,
-          ...embedding,
-        })),
-      );
-  
-      return 'Resource from text successfully created and embedded.';
-    } catch (error) {
-      return error instanceof Error && error.message.length > 0
-        ? error.message
-        : 'Error, please try again.';
+  try {
+    const { content } = insertResourceSchema.parse(input);
+
+    // Genera un hash del contenido
+    const contentHash = generateHash(content);
+
+    // Verifica si el hash ya existe en la base de datos
+    const existingResource = await db
+      .select()
+      .from(resources)
+      .where(sql`${resources.contentHash} = ${contentHash}`)
+      .limit(1);
+
+    if (existingResource.length > 0) {
+      console.log('El documento ya ha sido almacenado previamente.');
+      return 'El documento ya ha sido almacenado previamente.';
     }
-  };
+
+    // Genera los embeddings desde el contenido de texto
+    const embeddings = await generateEmbeddings(content);
+
+    // Inserta el recurso en la base de datos
+    const [resource] = await db
+      .insert(resources)
+      .values({ content, contentHash })
+      .returning();
+
+    // Inserta los embeddings en la base de datos
+    await db.insert(embeddingsTable).values(
+      embeddings.map(embedding => ({
+        resourceId: resource.id,
+        ...embedding,
+      })),
+    );
+
+    return 'Resource from text successfully created and embedded.';
+  } catch (error) {
+    return error instanceof Error && error.message.length > 0
+      ? error.message
+      : 'Error, please try again.';
+  }
+};

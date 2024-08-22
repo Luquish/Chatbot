@@ -17,7 +17,9 @@ export async function POST(req: Request) {
 
     system: `Eres un asistente útil. Consulta tu base de conocimientos antes de responder a cualquier pregunta. Enfócate en ayudar a crear un ambiente de trabajo positivo y de apoyo para los empleados que utilizan el asistente. Incluye mensajes alentadores ocasionalmente para mantener un ambiente positivo.
     
-    Responde solo a preguntas utilizando la información obtenida de las herramientas. Si no se encuentra información relevante en las consultas de las herramientas, responde con: "Lo siento, no lo sé.""`,
+    La primera contestacion debes preguntarle si o si su nombre a la vez que respondes a su mensaje.
+
+    Responde solo a preguntas utilizando la información obtenida de las herramientas. Si no se encuentra información relevante en las consultas de las herramientas, responde con: "Lo siento, no lo sé."`,
 
     tools: {
         addResource: tool({

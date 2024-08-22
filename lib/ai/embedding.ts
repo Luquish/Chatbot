@@ -1,5 +1,4 @@
-import crypto from 'crypto';
-import pdfParse from 'pdf-parse';
+import { getDocument } from 'pdfjs-dist'; // Importamos pdfjs-dist
 import * as fs from 'fs';
 import { embed, embedMany } from 'ai';
 import { openai } from '@ai-sdk/openai';
@@ -18,30 +17,28 @@ const generateChunks = (input: string): string[] => {
     .filter(i => i !== '');
 };
 
-// Función para leer el PDF y extraer texto
-const readPdf = async (filePath: string): Promise<string> => {
-  const dataBuffer = fs.readFileSync(filePath);
-  const data = await pdfParse(dataBuffer);
-  return data.text;
+// Función para leer el PDF y extraer texto utilizando pdfjs-dist
+const readPdf = async (fileName: string): Promise<string> => {
+  const fullPath = `/app/pdfs/${fileName}`;
+  const dataBuffer = fs.readFileSync(fullPath);
+  const pdfDoc = await getDocument({ data: dataBuffer }).promise;
+
+  let fullText = '';
+  for (let i = 1; i <= pdfDoc.numPages; i++) {
+    const page = await pdfDoc.getPage(i);
+    const textContent = await page.getTextContent();
+    const pageText = textContent.items;
+    fullText += pageText + '\n';
+  }
+
+  return fullText;
 };
-
-
-export const generateEmbeddings = async (
-    value: string,
-  ): Promise<Array<{ embedding: number[]; content: string }>> => {
-    const chunks = generateChunks(value);
-    const { embeddings } = await embedMany({
-      model: embeddingModel,
-      values: chunks,
-    });
-    return embeddings.map((e, i) => ({ content: chunks[i], embedding: e }));
-  };
 
 // Función para generar embeddings a partir del texto de un PDF
 export const generateEmbeddingsFromPdf = async (
-  filePath: string,
+  fileName: string,
 ): Promise<Array<{ embedding: number[]; content: string }>> => {
-  const text = await readPdf(filePath); // Lee el PDF
+  const text = await readPdf(fileName); // Lee el PDF
   const chunks = generateChunks(text); // Genera los chunks del texto
   const { embeddings } = await embedMany({
     model: embeddingModel,
@@ -50,27 +47,38 @@ export const generateEmbeddingsFromPdf = async (
   return embeddings.map((e, i) => ({ content: chunks[i], embedding: e }));
 };
 
+export const generateEmbeddings = async (
+  value: string,
+): Promise<Array<{ embedding: number[]; content: string }>> => {
+  const chunks = generateChunks(value);
+  const { embeddings } = await embedMany({
+    model: embeddingModel,
+    values: chunks,
+  });
+  return embeddings.map((e, i) => ({ content: chunks[i], embedding: e }));
+};
+
 export const generateEmbedding = async (value: string): Promise<number[]> => {
-    const input = value.replaceAll('\\n', ' ');
-    const { embedding } = await embed({
-      model: embeddingModel,
-      value: input,
-    });
-    return embedding;
-  };
+  const input = value.replaceAll('\\n', ' ');
+  const { embedding } = await embed({
+    model: embeddingModel,
+    value: input,
+  });
+  return embedding;
+};
 
 export const findRelevantContent = async (userQuery: string) => {
-    const userQueryEmbedded = await generateEmbedding(userQuery);
-    const similarity = sql<number>`1 - (${cosineDistance(
-      embeddings.embedding,
-      userQueryEmbedded,
-    )})`;
-    
-    const similarGuides = await db
-      .select({ name: embeddings.content, similarity })
-      .from(embeddings)
-      .where(gt(similarity, 0.5))
-      .orderBy(t => desc(t.similarity))
-      .limit(4);
-    return similarGuides;
-  };
+  const userQueryEmbedded = await generateEmbedding(userQuery);
+  const similarity = sql<number>`1 - (${cosineDistance(
+    embeddings.embedding,
+    userQueryEmbedded,
+  )})`;
+
+  const similarGuides = await db
+    .select({ name: embeddings.content, similarity })
+    .from(embeddings)
+    .where(gt(similarity, 0.5))
+    .orderBy(t => desc(t.similarity))
+    .limit(4);
+  return similarGuides;
+};
