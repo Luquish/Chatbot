@@ -12,12 +12,6 @@ export const resources = pgTable("resources", {
   
   content: text("content").notNull(),
 
-  // Agregamos un campo opcional para `filePath`
-  filePath: varchar("file_path", { length: 255 }).default(sql`NULL`),
-
-  // Nuevo campo para el hash
-  contentHash: varchar("content_hash", { length: 64 }).notNull(), 
-
   createdAt: timestamp("created_at")
     .notNull()
     .default(sql`now()`),
@@ -28,10 +22,7 @@ export const resources = pgTable("resources", {
   
 // Schema for resources - used to validate API requests
 export const insertResourceSchema = createSelectSchema(resources)
-  .extend({
-    // Añadimos `filePath` como un campo opcional en el schema de validación
-    filePath: z.string().optional().nullable(),
-  })
+  .extend({})
   .omit({
     id: true,
     createdAt: true,
