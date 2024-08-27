@@ -1,11 +1,22 @@
 'use client';
 
 import { useChat } from 'ai/react';
+import { useEffect, useRef } from 'react';
 
 export default function Chat() {
   const { messages, input, handleInputChange, handleSubmit } = useChat({
     maxToolRoundtrips: 2,
   });
+
+  // Ref para el contenedor de mensajes
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  // Efecto para hacer scroll automático al final de los mensajes
+  useEffect(() => {
+    if (messagesEndRef.current) {
+      messagesEndRef.current.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [messages]);
 
   return (
     <div className="flex flex-col items-center justify-center w-full h-screen" style={{ backgroundColor: '#1E1E1E' }}>
@@ -31,7 +42,7 @@ export default function Chat() {
                   }}
                 >
                   <div className={`font-bold ${m.role === 'user' ? 'text-green-400' : 'text-white'}`}>
-                    {m.role === 'user' ? 'You' : 'Sasha'}
+                    {m.role === 'user' ? 'You' : 'EunoIA'}
                   </div>
                   <p className="mt-1">
                     {m.content.length > 0 ? (
@@ -45,6 +56,8 @@ export default function Chat() {
                 </div>
               </div>
             ))}
+            {/* Ref para el auto-scroll */}
+            <div ref={messagesEndRef} />
           </div>
         </div>
 
