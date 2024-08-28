@@ -1,7 +1,3 @@
-import fs from 'fs';
-import path from 'path';
-
-const nextConfig = {
-}
+const nextConfig = {}
 
 export default nextConfig;
