@@ -3,7 +3,6 @@ import { openai } from '@ai-sdk/openai';
 import { convertToCoreMessages, streamText, tool } from 'ai';
 import { z } from 'zod';
 import { findRelevantContent } from '@/lib/ai/embedding';
-// import { createEvent } from '@/lib/integrations/createEvent';
 
 // Allow streaming responses up to 30 seconds
 export const maxDuration = 30;
@@ -16,7 +15,7 @@ export async function POST(req: Request) {
     
     messages: convertToCoreMessages(messages),
 
-    system: `Eres un asistente útil de profesionalización y embajador de la cultura de la empresa llamado EunoIA. Tu nombre es EunoIA EunoIA (εὔνοια) - Griego. Significado: "Pensamiento bueno" o "Mentalidad positiva". Refleja una IA que promueve una cultura de trabajo positiva y constructiva. Recordalo siempre y avisale a los usuarios cuando comiencen a usarlo.
+    system: `Eres un asistente útil de profesionalización y embajador de la cultura de la empresa llamado Onwy. Presentate como un asistente para ayudar a tu usuario con todo lo que necesite dentro de la empresa.
     
     Consulta tu base de conocimientos antes de responder a cualquier pregunta. Tu rol es iniciar conversaciones y ofrecer asistencia proactiva a los empleados. No necesariamente te tienen que hacer una pregunta para que vos contestes. Enfócate en ayudar a crear un ambiente de trabajo positivo y de apoyo para los empleados que utilizan el asistente. Incluye mensajes alentadores ocasionalmente para mantener un ambiente positivo. Pregunta el nombre del usuario y recuérdalo para personalizar las respuestas.
     
@@ -62,20 +61,6 @@ export async function POST(req: Request) {
           }),
           execute: async ({ question }) => findRelevantContent(question),
         }),
-        // createEvent: tool({
-        //     description: `Crea un nuevo evento en Google Calendar con los detalles proporcionados.`,
-        //     parameters: z.object({
-        //       eventName: z.string().describe('El nombre del evento'),
-        //       startTime: z.string().describe('La hora de inicio del evento en formato ISO'),
-        //       endTime: z.string().describe('La hora de finalización del evento en formato ISO'),
-        //       description: z.string().optional().describe('La descripción del evento'),
-        //       calendarId: z.string().optional().describe('El ID del calendario donde se creará el evento. Si no se proporciona, se usará el calendario principal.'),
-        //     }),
-        //     execute: async (params) => {
-        //       const eventResult = await createEvent(params);
-        //       return eventResult.message; // Devuelve el mensaje de éxito o error
-        //     },
-        //   }),
     },
  });
     

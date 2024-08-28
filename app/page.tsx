@@ -42,7 +42,7 @@ export default function Chat() {
                   }}
                 >
                   <div className={`font-bold ${m.role === 'user' ? 'text-green-400' : 'text-white'}`}>
-                    {m.role === 'user' ? 'You' : 'EunoIA'}
+                    {m.role === 'user' ? 'You' : 'Onwy'}
                   </div>
                   <p className="mt-1">
                     {m.content.length > 0 ? (
