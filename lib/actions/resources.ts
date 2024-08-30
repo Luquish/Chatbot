@@ -8,9 +8,6 @@ import {
 import { db } from '../db';
 import { generateEmbeddings } from '../ai/embedding';
 import { embeddings as embeddingsTable } from '../db/schema/embeddings';
-import * as fs from 'fs';
-import crypto from 'crypto';
-import { sql } from 'drizzle-orm';
 
 export const createResource = async (input: NewResourceParams) => {
     try {

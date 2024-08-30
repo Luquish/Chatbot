@@ -23,7 +23,7 @@ export default function Chat() {
       {/* Chat container */}
       <div className="flex flex-col w-full max-w-3xl h-full">
         {/* Messages display */}
-        <div className="flex-1 p-6 overflow-y-auto text-white">
+        <div className="flex-1 p-6 overflow-y-auto text-white" style={{ marginRight: '-17px', paddingRight: '17px' }}>
           <div className="space-y-4">
             {messages.map(m => (
               <div
