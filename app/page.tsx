@@ -1,7 +1,10 @@
+// app/page.tsx
+
 'use client';
 
 import { useChat } from 'ai/react';
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import FeedbackButton from '../components/ui/FeedbackButtons'; // Ruta corregida
 
 export default function Chat() {
   const { messages, input, handleInputChange, handleSubmit } = useChat({
@@ -11,18 +14,44 @@ export default function Chat() {
   // Ref para el contenedor de mensajes
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  // Efecto para hacer scroll automático al final de los mensajes
+  // Estado para controlar la aparición de los botones de feedback
+  const [showFeedback, setShowFeedback] = useState<boolean>(false);
+  const [currentFeedbackMessage, setCurrentFeedbackMessage] = useState<{ prompt: string; response: string } | null>(null);
+
+  // Efecto para hacer scroll automático al final de los mensajes y determinar la aparición de feedback
   useEffect(() => {
     if (messagesEndRef.current) {
       messagesEndRef.current.scrollIntoView({ behavior: 'smooth' });
     }
+
+    // Determinar aleatoriamente si se muestra el feedback (ejemplo: 20% de probabilidad)
+    const shouldShow = Math.random() < 0.2;
+    if (shouldShow && messages.length >= 2) {
+      const lastMessage = messages[messages.length - 1];
+      const previousMessage = messages[messages.length - 2];
+      
+      // Verificar que el último mensaje no sea del usuario y el anterior sí
+      if (lastMessage.role !== 'user' && previousMessage.role === 'user') {
+        setCurrentFeedbackMessage({
+          prompt: previousMessage.content,
+          response: lastMessage.content,
+        });
+        setShowFeedback(true);
+      }
+    }
   }, [messages]);
+
+  // Función para ocultar los botones de feedback después de enviar
+  const handleFeedbackSubmit = () => {
+    setShowFeedback(false);
+    setCurrentFeedbackMessage(null);
+  };
 
   return (
     <div className="flex flex-col items-center justify-center w-full h-screen" style={{ backgroundColor: '#1E1E1E' }}>
       {/* Chat container */}
       <div className="flex flex-col w-full max-w-3xl h-full">
-        {/* Messages display */}
+        {/* Mensajes */}
         <div className="flex-1 p-6 overflow-y-auto text-white" style={{ marginRight: '-17px', paddingRight: '17px' }}>
           <div className="space-y-4">
             {messages.map(m => (
@@ -56,13 +85,25 @@ export default function Chat() {
                 </div>
               </div>
             ))}
+
             {/* Ref para el auto-scroll */}
             <div ref={messagesEndRef} />
           </div>
         </div>
 
-        {/* Input form */}
-        <form onSubmit={handleSubmit} className="p-4">
+        {/* Botón de Feedback (encima de la barra de entrada) */}
+        {showFeedback && currentFeedbackMessage && (
+          <div className="flex justify-center mb-4">
+            <FeedbackButton
+              prompt={currentFeedbackMessage.prompt}
+              response={currentFeedbackMessage.response}
+              onFeedbackSubmit={handleFeedbackSubmit}
+            />
+          </div>
+        )}
+
+        {/* Barra de entrada de mensajes */}
+        <form onSubmit={handleSubmit} className="p-4 relative">
           <input
             className="w-full p-3 bg-gray-800 text-white rounded-full shadow-lg focus:outline-none focus:ring-2 focus:ring-opacity-50 focus:ring-offset-2 transition-all duration-300 ease-in-out"
             value={input}

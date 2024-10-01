@@ -1,4 +1,6 @@
-import { processPDF } from '@/lib/pdf/readPDF';
+// lib/pdf/processPDFsInFolder.ts
+
+import { processPDF } from '@/lib/getPDF/readPDF'; // Ruta correcta utilizando alias
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -26,7 +28,14 @@ export const processPDFsInFolder = async (folderPath: string) => {
   }
 };
 
+// Ejecutar el script si se ejecuta directamente desde la línea de comandos
 if (require.main === module) {
-  const folderPath = process.argv[2] || 'data'; 
-  processPDFsInFolder(folderPath);
+  const folderPath = process.argv[2] || 'data/pdfs'; // Asegúrate de que el path por defecto sea el correcto
+  processPDFsInFolder(folderPath)
+    .then(() => {
+      console.log('Todos los PDFs han sido procesados.');
+    })
+    .catch(error => {
+      console.error('Error al procesar los PDFs:', error);
+    });
 }
