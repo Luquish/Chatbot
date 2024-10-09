@@ -1,12 +1,18 @@
+// lib/db/index.ts  
+
 import { drizzle } from 'drizzle-orm/postgres-js';
 import postgres from 'postgres';
 import { env } from '@/lib/env.mjs';
-import { feedback } from './schema/feedback'; // Importa el esquema de feedback
+import { feedback } from './schema/feedback';
+import { users, accounts, sessions, verificationTokens } from './schema/schemas';
 
 const client = postgres(env.DATABASE_URL);
 export const db = drizzle(client, {
   schema: {
-    feedback, // Agrega el esquema de feedback
-    // ... otros esquemas si los tienes
+    feedback,
+    users,
+    accounts,
+    sessions,
+    verificationTokens,
   },
 });
