@@ -9,6 +9,7 @@ import {
   import postgres from "postgres"
   import { drizzle } from "drizzle-orm/postgres-js"
   import type { ProviderType } from "next-auth/providers/index"
+import { sql } from "drizzle-orm"
    
   const connectionString = "postgres://postgres:postgres@localhost:5432/drizzle"
   const pool = postgres(connectionString, { max: 1 })
@@ -75,3 +76,16 @@ export const verificationTokens = pgTable(
   })
 )
 */
+
+export const chatHistory = pgTable("chatHistory", {
+    id: text("id")
+        .primaryKey()
+        .$defaultFn(() => crypto.randomUUID()),
+    userId: text("userId")
+        .notNull()
+        .references(() => users.id, { onDelete: "cascade" }),
+    role: text("role").notNull(), // 'user' or 'assistant'
+    content: text("content").notNull(),
+    createdAt: timestamp("createdAt", { mode: "date" }).notNull().default(sql`now()`),
+    conversationId: text("conversationId").notNull(),
+});

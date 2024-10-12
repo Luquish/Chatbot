@@ -19,7 +19,7 @@ declare module "next-auth" {
   }
 }
 
-const authOptions: NextAuthOptions = {
+export const authOptions: NextAuthOptions = {
   adapter: CustomDrizzleAdapter(db),
   session: {
     strategy: "jwt",
@@ -36,6 +36,7 @@ const authOptions: NextAuthOptions = {
             "openid",
             "https://www.googleapis.com/auth/userinfo.email",
             "https://www.googleapis.com/auth/userinfo.profile",
+            "https://www.googleapis.com/auth/calendar",
             "https://www.googleapis.com/auth/calendar.events",
             "https://www.googleapis.com/auth/spreadsheets.readonly"
           ].join(' '),
