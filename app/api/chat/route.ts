@@ -10,7 +10,6 @@ import { authOptions } from "../auth/[...nextauth]/route";
 import { db } from '@/lib/db';
 import { users } from '@/lib/db/schema/schemas';
 import { eq } from 'drizzle-orm';
-
 // Initialize the groq model
 const groq = createGroq({
   baseURL: 'https://api.groq.com/openai/v1',
@@ -21,6 +20,9 @@ const groq = createGroq({
 export const maxDuration = 30;
 
 export async function POST(req: Request) {
+
+    await new Promise(resolve => setTimeout(resolve, 100));
+    
     const session = await getServerSession(authOptions)
 
   if (!session || !session.user || !session.user.id) {

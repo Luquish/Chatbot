@@ -8,6 +8,7 @@ import FeedbackButton from '@/components/ui/FeedbackButtons';
 import { useRouter } from 'next/navigation';
 import { useSession, SessionProvider } from 'next-auth/react';
 import ProactiveMessages from '@/components/ui/ProactiveMessages';
+import TextareaAutosize from 'react-textarea-autosize';
 
 function ChatComponent() {
     const { data: session, status } = useSession();
@@ -22,22 +23,16 @@ function ChatComponent() {
         setIsBotResponding(false);
       },
     });
-    const handleFormSubmit = (e: React.FormEvent<HTMLFormElement>) => {
-        e.preventDefault();
-        if (!isBotResponding) {
-          handleSubmit(e);
-        }
-      };
     const messagesEndRef = useRef<HTMLDivElement>(null);
     const [showFeedback, setShowFeedback] = useState<boolean>(false);
     const [currentFeedbackMessage, setCurrentFeedbackMessage] = useState<{ prompt: string; response: string } | null>(null);
-  
+
     useEffect(() => {
       if (status === 'unauthenticated') {
         router.push('/auth/signin');
       }
     }, [status, router]);
-  
+
     useEffect(() => {
       if (messagesEndRef.current) {
         messagesEndRef.current.scrollIntoView({ behavior: 'smooth' });
@@ -58,15 +53,15 @@ function ChatComponent() {
         }
       }
     }, [messages]);
-  
+
     if (status === 'loading') {
       return <div>Loading...</div>;
     }
-  
+
     if (!session) {
       return null;
     }
-  
+
     // Función para ocultar los botones de feedback después de enviar
     const handleFeedbackSubmit = () => {
       setShowFeedback(false);
@@ -88,6 +83,22 @@ function ChatComponent() {
     const handleProactiveMessage = (message: string) => {
         console.log('Triggering proactive message:', message);
         addHiddenUserMessage(message);
+    };
+
+    // Función para enviar el mensaje
+    const sendMessage = () => {
+      if (!isBotResponding && input.trim() !== '') {
+        setIsBotResponding(true);
+        handleSubmit(); // Asumiendo que handleSubmit puede ser llamado sin argumentos
+      }
+    };
+
+    // Manejador de eventos de teclado
+    const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        sendMessage();
+      }
     };
 
   return (
@@ -165,15 +176,21 @@ function ChatComponent() {
         )}
 
         {/* Barra de entrada de mensajes */}
-        <form onSubmit={handleFormSubmit} className="p-4 relative">
-          <input
-            className={`w-full p-3 bg-gray-800 text-white rounded-full shadow-lg focus:outline-none focus:ring-2 focus:ring-opacity-50 focus:ring-offset-2 transition-all duration-300 ease-in-out ${
+        <form onSubmit={(e) => { e.preventDefault(); sendMessage(); }} className="p-4 relative w-full">
+          <TextareaAutosize
+            className={`w-full p-3 bg-gray-800 text-white rounded-lg shadow-lg focus:outline-none focus:ring-2 focus:ring-opacity-50 focus:ring-offset-2 transition-all duration-300 ease-in-out resize-none overflow-y-auto ${
               isBotResponding ? 'opacity-50 cursor-not-allowed' : ''
             }`}
             value={input}
             placeholder="Type your message here..."
             onChange={handleInputChange}
+            onKeyDown={handleKeyDown}
             disabled={isBotResponding}
+            minRows={1} // Número mínimo de filas
+            maxRows={5} // Número máximo de filas (opcional)
+            style={{
+                height: undefined,
+            }}
           />
         </form>
       </div>
