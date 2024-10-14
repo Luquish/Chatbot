@@ -1,18 +1,91 @@
 import { google } from 'googleapis';
-import { OAuth2Client } from 'google-auth-library';
 import { accounts } from '../db/schema/schemas';
 import { eq } from 'drizzle-orm';
 import { db } from '../db';
+import { DateTime } from 'luxon';
 
 function createOAuth2Client() {
-    return new OAuth2Client({
-      clientId: process.env.GOOGLE_CLIENT_ID,
-      clientSecret: process.env.GOOGLE_CLIENT_SECRET,
-      redirectUri: process.env.GOOGLE_REDIRECT_URI,
-    });
+  console.log('Creating OAuth2Client');
+  return new google.auth.OAuth2(
+    process.env.GOOGLE_CLIENT_ID,
+    process.env.GOOGLE_CLIENT_SECRET,
+    process.env.GOOGLE_REDIRECT_URI
+  );
+}
+
+function parseDateTime(dateTimeString: string) {
+  const timeZone = 'America/Argentina/Buenos_Aires';
+  const currentYear = DateTime.now().setZone(timeZone).year;
+
+  // Manejar formato "dd de mes a las HH:MM AM/PM"
+  const spanishDateTimeRegex = /(\d{1,2}) de (\w+)(?: de (\d{4}))? a las (\d{1,2}):(\d{2}) (AM|PM)/i;
+  const match = dateTimeString.match(spanishDateTimeRegex);
+  if (match) {
+    const [, day, monthStr, year, hour, minute, ampm] = match;
+    const months: { [key: string]: number } = {
+      enero: 1, febrero: 2, marzo: 3, abril: 4, mayo: 5, junio: 6,
+      julio: 7, agosto: 8, septiembre: 9, octubre: 10, noviembre: 11, diciembre: 12
+    };
+    const month = months[monthStr.toLowerCase()];
+    const yearNum = year ? parseInt(year) : currentYear;
+    let hourNum = parseInt(hour);
+    const minuteNum = parseInt(minute);
+    if (ampm.toLowerCase() === 'pm' && hourNum !== 12) hourNum += 12;
+    if (ampm.toLowerCase() === 'am' && hourNum === 12) hourNum = 0;
+
+    const dt = DateTime.fromObject(
+      { year: yearNum, month, day: parseInt(day), hour: hourNum, minute: minuteNum },
+      { zone: timeZone }
+    );
+
+    if (!dt.isValid) {
+      throw new Error(`Fecha inválida: ${dateTimeString}`);
+    }
+
+    return {
+      date: null,
+      dateTime: dt.toISO({ suppressMilliseconds: true }), // Sin milisegundos
+      timeZone
+    };
   }
 
-export async function createEvent({ summary, description, location, startDateTime, endDateTime, userId, attendeesEmails, calendarId, eventType }: {
+  // Verificar si es una fecha completa (yyyy-mm-dd)
+  const fullDateRegex = /^\d{4}-\d{2}-\d{2}$/;
+  if (fullDateRegex.test(dateTimeString)) {
+    return {
+      date: dateTimeString,
+      dateTime: null,
+      timeZone
+    };
+  }
+
+  // Intentar parsear como fecha y hora en formato ISO
+  try {
+    const dt = DateTime.fromISO(dateTimeString, { zone: timeZone });
+    if (dt.isValid) {
+      return {
+        date: null,
+        dateTime: dt.toISO({ suppressMilliseconds: true }), // Sin milisegundos
+        timeZone
+      };
+    }
+  } catch (error) {
+    console.error('Error parsing date:', error);
+  }
+
+  // Si no se pudo parsear, lanzar un error
+  throw new Error(`Formato de fecha y hora no válido: ${dateTimeString}`);
+}
+
+export async function createEvent({
+  summary,
+  description,
+  location,
+  startDateTime,
+  endDateTime,
+  userId,
+  attendeesEmails,
+}: {
   summary: string,
   description: string,
   location: string,
@@ -20,68 +93,90 @@ export async function createEvent({ summary, description, location, startDateTim
   endDateTime: string,
   userId: string,
   attendeesEmails: string[],
-  calendarId: string,
-  eventType: string
 }) {
-  const userAccount = await db.select().from(accounts).where(eq(accounts.userId, userId)).limit(1).execute();
-
-  if (!userAccount || !userAccount[0]?.refresh_token) {
-    throw new Error('Refresh token not found for the user');
-  }
-
-  const oauth2Client = createOAuth2Client();
+  console.log('Starting createEvent function');
+  console.log('User ID:', userId);
 
   try {
+    console.log('Fetching user account');
+    const userAccount = await db.select().from(accounts).where(eq(accounts.userId, userId)).limit(1).execute();
+    console.log('User account:', userAccount);
+
+    if (!userAccount || !userAccount[0]?.refresh_token) {
+      console.error('Refresh token not found for the user');
+      return { error: 'No se encontró el token de actualización para el usuario' };
+    }
+
+    console.log('Creating OAuth2Client');
+    const oauth2Client = createOAuth2Client();
+
+    console.log('Setting OAuth2Client credentials');
     oauth2Client.setCredentials({
       refresh_token: userAccount[0].refresh_token,
-      access_token: userAccount[0].access_token,
-      expiry_date: userAccount[0].expires_at,
-      token_type: userAccount[0].token_type,
-      scope: userAccount[0].scope || '',
-      id_token: userAccount[0].id_token || '',
     });
 
-    const calendar = google.calendar({ version: 'v3'});
+    console.log('Refreshing access token');
+    const { credentials } = await oauth2Client.refreshAccessToken();
+    oauth2Client.setCredentials(credentials);
 
-    const event = {
-      summary,
-      description,
-      location,
-      start: {
-        dateTime: startDateTime,
-        timeZone: 'America/Argentina/Buenos_Aires',
-      },
-      end: {
-        dateTime: endDateTime,
-        timeZone: 'America/Argentina/Buenos_Aires',
-      },
+    console.log('Creating calendar instance');
+    const calendar = google.calendar({ version: 'v3', auth: oauth2Client });
+
+    const parsedStart = parseDateTime(startDateTime);
+    const parsedEnd = parseDateTime(endDateTime);
+
+    const event: any = {
+      summary: summary,
+      description: description,
+      location: location,
       attendees: attendeesEmails.map(email => ({ email })),
-      eventType: eventType,
+      // eventType: eventType, // Eliminar este campo
     };
 
+    // Asignar los campos start y end correctamente
+    if (parsedStart.date) {
+      event.start = { date: parsedStart.date, timeZone: parsedStart.timeZone };
+    } else {
+      event.start = { dateTime: parsedStart.dateTime, timeZone: parsedStart.timeZone };
+    }
+
+    if (parsedEnd.date) {
+      event.end = { date: parsedEnd.date, timeZone: parsedEnd.timeZone };
+    } else {
+      event.end = { dateTime: parsedEnd.dateTime, timeZone: parsedEnd.timeZone };
+    }
+
+    console.log('Event object:', event);
+
+    console.log('Inserting event');
     const res = await calendar.events.insert({
-      calendarId: calendarId,
+      calendarId: 'primary', // Usar 'primary' por defecto
       requestBody: event,
-      sendNotifications: true,
-      sendUpdates: 'all',
+      // sendNotifications: true, // Campo deprecated, eliminar
+      sendUpdates: 'all', // Usar sendUpdates en su lugar
+      // Puedes agregar otros campos como 'conferenceDataVersion' si es necesario
     });
+    console.log('Event created successfully');
 
     return [{
-        name: summary,
-        eventLink: res.data.htmlLink,
-        startTime: startDateTime,
-        endTime: endDateTime,
-        attendees: attendeesEmails,
-        eventType: eventType,
-      }];
-    } catch (error) {
-      console.error('Error creating event:', error);
-      if (error instanceof Error && 'response' in error) {
-        const axiosError = error as { response?: { data?: { error?: unknown } } };
-        if (axiosError.response?.data?.error) {
-          console.error('Detailed error:', axiosError.response.data.error);
-        }
-      }
-      throw error;
+      name: summary,
+      eventLink: res.data.htmlLink,
+      startTime: startDateTime,
+      endTime: endDateTime,
+      attendees: attendeesEmails,
+    }];
+  } catch (error) {
+    console.error('Error in createEvent function:', error);
+    if (error instanceof Error) {
+      console.error('Error message:', error.message);
+      console.error('Error stack:', error.stack);
     }
+    if (error instanceof Error && 'response' in error) {
+      const axiosError = error as any;
+      if (axiosError.response?.data?.error) {
+        console.error('Detailed API error:', axiosError.response.data.error);
+      }
+    }
+    throw error;
   }
+}

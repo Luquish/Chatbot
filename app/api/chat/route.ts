@@ -64,17 +64,19 @@ export async function POST(req: Request) {
         - Título del evento
         - Descripción del evento
         - Ubicación del evento
-        - Fecha y hora de inicio (en cualquier formato que el usuario prefiera, por ejemplo: "mañana a las 2 de la tarde" o "15 de mayo a las 14:00", pero siempre que aclare el dia y el mes)
-        - Fecha y hora de finalización (en el mismo formato que el inicio)
+        - Fecha y hora de inicio
+        - Fecha y hora de finalización
         - Correos electrónicos de los asistentes (si los hay)
-        - ID del calendario (si el usuario lo conoce, de lo contrario usa el calendario predeterminado)
-        - Tipo de evento (si es relevante)
 
     2. Asegúrate de obtener todos estos datos antes de crear el evento. Si el usuario no proporciona alguno de estos datos, pregúntale específicamente por esa información faltante.
 
-    3. Una vez que tengas todos los datos necesarios, utiliza la herramienta createCalendarEvent para crear el evento.
+    3. Formatea las fechas y horas de inicio y fin al siguiente formato: "dd de mes a las HH:MM AM/PM". Por ejemplo: "15 de octubre a las 03:00 PM".
+        - Si el usuario no proporciona el año, asume el año actual.
+        - Asegúrate de usar el formato de 12 horas con AM/PM.
 
-    4. Después de crear el evento, confirma al usuario que el evento ha sido creado exitosamente y proporciona un resumen de los detalles del evento.
+    4. Una vez que tengas todos los datos necesarios y hayas formateado las fechas, envia un resumen del evento al usuario y espera a que te confirme los datos. Luego utiliza la herramienta createCalendarEvent para crear el evento.
+
+    5. Después de crear el evento, confirma al usuario que el evento ha sido creado exitosamente y proporciona un resumen de los detalles del evento junto con el link de la reunión.
 
     Recuerda ser siempre amable y profesional en tus interacciones.`,
 
@@ -105,13 +107,11 @@ export async function POST(req: Request) {
               startDateTime: z.string().describe('the start date and time of the event'),
               endDateTime: z.string().describe('the end date and time of the event'),
               attendeesEmails: z.array(z.string()).describe('the emails of the attendees'),
-              calendarId: z.string().describe('the id of the calendar'),
-              eventType: z.string().describe('the type of the event'),
             }),
-            execute: async ({ summary, description, location, startDateTime, endDateTime, attendeesEmails, calendarId, eventType }) => {
+            execute: async ({ summary, description, location, startDateTime, endDateTime, attendeesEmails}) => {
               // Importa la función createEvent aquí para evitar problemas de circular dependency
               const { createEvent } = await import('@/lib/ai/googleCalendar');
-              return createEvent({ summary, description, location, startDateTime, endDateTime, userId, attendeesEmails, calendarId, eventType });
+              return createEvent({ summary, description, location, startDateTime, endDateTime, userId, attendeesEmails });
             },
           }),
     },

@@ -24,10 +24,8 @@ export function ProactiveMessages({ onSendProactiveMessage }: { onSendProactiveM
 
     const checkInactivity = setInterval(() => {
         const inactiveTime = Date.now() - lastActivityTime;
-        console.log(`Checking inactivity... Time since last activity: ${inactiveTime}ms`);
     
         if (inactiveTime > INACTIVITY_TIMEOUT) {
-          console.log('Inactivity threshold reached, triggering proactive message');
           const proactivePrompts = [
             "ofrecimiento de ayuda",
             "recordatorio de tareas pendientes",
@@ -36,19 +34,15 @@ export function ProactiveMessages({ onSendProactiveMessage }: { onSendProactiveM
             "consultar que hare hoy",
             "consultar que hice hoy",
             "consultar que hare mañana",
-            "consultar que hare el fin de semana"
+            "consultar que hare el fin de semana",
           ];
           const randomPrompt = proactivePrompts[Math.floor(Math.random() * proactivePrompts.length)];
-          console.log('Triggering proactive message with prompt:', randomPrompt);
           onSendProactiveMessage(randomPrompt);
           setLastActivityTime(Date.now()); // Reiniciar el temporizador
-          console.log('Timer reset after triggering proactive message');
         }
       }, 1000);
 
     return () => {
-      console.log('ProactiveMessages component unmounting');
-      window.removeEventListener('mousemove', handleActivity);
       window.removeEventListener('keypress', handleActivity);
       clearInterval(checkInactivity);
     };

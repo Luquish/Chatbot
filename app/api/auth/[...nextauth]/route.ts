@@ -1,14 +1,12 @@
 // app/api/auth/[...nextauth]/route.ts
 
-import NextAuth from "next-auth"
-import { NextAuthOptions } from "next-auth"
+import NextAuth, { NextAuthOptions, DefaultSession } from "next-auth"
 import GoogleProvider from "next-auth/providers/google"
 import { db } from "@/lib/db"
 import { accounts, users } from "@/lib/db/schema/schemas"
-import { eq } from "drizzle-orm"
+import { eq, and } from "drizzle-orm"
 import CredentialsProvider from "next-auth/providers/credentials"
 import bcrypt from "bcrypt"
-import { DefaultSession } from "next-auth"
 import { CustomDrizzleAdapter } from "@/lib/customDrizzleAdapter"
 
 declare module "next-auth" {
@@ -16,6 +14,8 @@ declare module "next-auth" {
     user?: {
       id: string;
     } & DefaultSession["user"]
+    accessToken?: string;
+    refreshToken?: string;
   }
 }
 
@@ -23,6 +23,7 @@ export const authOptions: NextAuthOptions = {
   adapter: CustomDrizzleAdapter(db),
   session: {
     strategy: "jwt",
+    maxAge: 30 * 24 * 60 * 60, // 30 días
   },
   providers: [
     GoogleProvider({
@@ -30,7 +31,7 @@ export const authOptions: NextAuthOptions = {
       clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
       authorization: {
         params: {
-          prompt: "consent",
+          prompt: "select_account",
           access_type: "offline",
           scope: [
             "openid",
@@ -76,79 +77,104 @@ export const authOptions: NextAuthOptions = {
     }),
   ],
   callbacks: {
-    async signIn({ user, account }) {
+    async signIn({ user, account, profile }) {
         if (account?.provider === "google") {
+          try {
             const existingUser = await db.query.users.findFirst({
               where: eq(users.email, user.email!)
             })
-    
-            if (!existingUser) {
-              // Crear nuevo usuario
+  
+            if (existingUser) {
+              // Si el usuario existe pero no está vinculado a Google
+              if (existingUser.authProvider !== 'google') {
+                // Actualizar el usuario existente para vincularlo a Google
+                await db.update(users)
+                  .set({ 
+                    authProvider: 'google',
+                    name: user.name || existingUser.name,
+                    image: user.image || existingUser.image
+                  })
+                  .where(eq(users.id, existingUser.id))
+                
+                // Eliminar cualquier cuenta local existente
+                await db.delete(accounts)
+                  .where(and(
+                    eq(accounts.userId, existingUser.id),
+                    eq(accounts.provider, 'credentials')
+                  ))
+              }
+            } else {
+              // Crear nuevo usuario si no existe
               await db.insert(users).values({
                 id: user.id,
                 email: user.email!,
                 name: user.name,
                 image: user.image,
                 authProvider: 'google',
-                // No se establece contraseña para usuarios de Google
               })
-            } 
-            else if (existingUser.authProvider !== 'google') {
-              // Actualizar usuario existente si se registró previamente con otro método
-              await db.update(users)
-                .set({ authProvider: 'google' })
-                .where(eq(users.email, user.email!))
             }
-            // Actualizar el nombre del usuario si ha cambiado en Google
-            if (existingUser && user.name && existingUser.name !== user.name) {
-                await db.update(users)
-                .set({ name: user.name })
-                .where(eq(users.id, existingUser.id))
-            }
-
-          }
-          if (account?.provider === "google" && account.access_token && account.refresh_token) {
-            await db.insert(accounts).values({
-              userId: user.id!,
-              type: account.type,
-              provider: account.provider!,
-              providerAccountId: account.providerAccountId!,
-              refresh_token: account.refresh_token,
-              access_token: account.access_token,
-              expires_at: account.expires_at,
-              token_type: account.token_type,
-              scope: account.scope,
-              id_token: account.id_token,
-              session_state: account.session_state,
-            }).onConflictDoUpdate({
-              target: [accounts.provider, accounts.providerAccountId],
-              set: {
+  
+            // Actualizar o insertar la cuenta de Google
+            if (account.access_token && account.refresh_token) {
+              await db.insert(accounts).values({
+                userId: existingUser ? existingUser.id : user.id!,
+                type: account.type,
+                provider: account.provider!,
+                providerAccountId: account.providerAccountId!,
                 refresh_token: account.refresh_token,
                 access_token: account.access_token,
                 expires_at: account.expires_at,
-              }
-            });
+                token_type: account.token_type,
+                scope: account.scope,
+                id_token: account.id_token,
+                session_state: account.session_state,
+              }).onConflictDoUpdate({
+                target: [accounts.provider, accounts.providerAccountId],
+                set: {
+                  refresh_token: account.refresh_token,
+                  access_token: account.access_token,
+                  expires_at: account.expires_at,
+                }
+              });
+            }
+            return true
+          } catch (error) {
+            console.error("Error during Google sign in:", error);
+            return false;
           }
-          return true
-    },
+        }
+        return true;
+      },
     
     async redirect({ url, baseUrl }: { url: string; baseUrl: string }) {
       return '/chat'
-    },async jwt({ token, user, account }) {
-        if (user) {
-          token.id = user.id
+    },
+    
+    async jwt({ token, account, trigger }) {
+        if (trigger === "signIn" && account) {
+          token.accessToken = account.access_token;
+          token.refreshToken = account.refresh_token;
+          token.provider = account.provider;
         }
-        if (account) {
-          token.accessToken = account.access_token
-        }
-        return token
-      },
-      async session({ session, token }) {
+        return token;
+    },
+    
+    async session({ session, token }) {
         if (session.user) {
-          session.user.id = token.id as string
+            session.user.id = token.sub as string;
+            session.accessToken = token.accessToken as string;
+            session.refreshToken = token.refreshToken as string;
         }
         return session
       },   
+  },
+  events: {
+    async signOut({ token }) {
+      if (token.provider === "google") {
+        const url = `https://accounts.google.com/o/oauth2/revoke?token=${token.accessToken}`;
+        await fetch(url, { method: "POST" });
+      }
+    },
   },
 }
 
