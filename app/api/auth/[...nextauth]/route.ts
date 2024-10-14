@@ -77,47 +77,45 @@ export const authOptions: NextAuthOptions = {
     }),
   ],
   callbacks: {
-    async signIn({ user, account, profile }) {
+    async signIn({ user, account, profile, email }) {
+      try {
         if (account?.provider === "google") {
           try {
+            console.log("Attempting Google sign in for email:", user.email);
             const existingUser = await db.query.users.findFirst({
               where: eq(users.email, user.email!)
             })
-  
+
             if (existingUser) {
-              // Si el usuario existe pero no está vinculado a Google
-              if (existingUser.authProvider !== 'google') {
-                // Actualizar el usuario existente para vincularlo a Google
-                await db.update(users)
-                  .set({ 
-                    authProvider: 'google',
-                    name: user.name || existingUser.name,
-                    image: user.image || existingUser.image
-                  })
-                  .where(eq(users.id, existingUser.id))
-                
-                // Eliminar cualquier cuenta local existente
-                await db.delete(accounts)
-                  .where(and(
-                    eq(accounts.userId, existingUser.id),
-                    eq(accounts.provider, 'credentials')
-                  ))
-              }
+              console.log("Existing user found:", existingUser);
+              // Si el usuario existe, actualiza sus datos
+              await db.update(users)
+                .set({ 
+                  authProvider: 'google',
+                  name: user.name || existingUser.name,
+                  image: user.image || existingUser.image
+                })
+                .where(eq(users.id, existingUser.id))
+              
+              // Actualiza el ID del usuario para que coincida con el existente
+              user.id = existingUser.id;
             } else {
+              console.log("Creating new user for email:", user.email);
               // Crear nuevo usuario si no existe
-              await db.insert(users).values({
-                id: user.id,
+              const newUser = await db.insert(users).values({
                 email: user.email!,
                 name: user.name,
                 image: user.image,
                 authProvider: 'google',
-              })
+              }).returning();
+              user.id = newUser[0].id;
             }
-  
+
             // Actualizar o insertar la cuenta de Google
             if (account.access_token && account.refresh_token) {
+              console.log("Updating or inserting Google account for user ID:", user.id);
               await db.insert(accounts).values({
-                userId: existingUser ? existingUser.id : user.id!,
+                userId: user.id,
                 type: account.type,
                 provider: account.provider!,
                 providerAccountId: account.providerAccountId!,
@@ -137,6 +135,7 @@ export const authOptions: NextAuthOptions = {
                 }
               });
             }
+            console.log("Google sign in successful for email:", user.email);
             return true
           } catch (error) {
             console.error("Error during Google sign in:", error);
@@ -144,7 +143,17 @@ export const authOptions: NextAuthOptions = {
           }
         }
         return true;
-      },
+      } catch (error: unknown) {
+        console.error("Error during sign in:", error);
+        if (error instanceof Error && error.message === "OAuthAccountNotLinked") {
+          // Aquí puedes manejar específicamente este error
+          // Por ejemplo, podrías intentar vincular las cuentas automáticamente
+          // o redirigir al usuario a una página de resolución de conflictos
+          return '/auth/error?error=OAuthAccountNotLinked';
+        }
+        return false;
+      }
+    },
     
     async redirect({ url, baseUrl }: { url: string; baseUrl: string }) {
       return '/chat'
@@ -169,12 +178,16 @@ export const authOptions: NextAuthOptions = {
       },   
   },
   events: {
-    async signOut({ token }) {
+    async signOut({ token, session }) {
       if (token.provider === "google") {
         const url = `https://accounts.google.com/o/oauth2/revoke?token=${token.accessToken}`;
         await fetch(url, { method: "POST" });
       }
+      // Puedes agregar lógica adicional aquí si es necesario
     },
+  },
+  pages: {
+    signOut: '/', // Redirige a la página principal después del cierre de sesión
   },
 }
 

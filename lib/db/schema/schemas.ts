@@ -88,4 +88,5 @@ export const chatHistory = pgTable("chatHistory", {
     content: text("content").notNull(),
     createdAt: timestamp("createdAt", { mode: "date" }).notNull().default(sql`now()`),
     conversationId: text("conversationId").notNull(),
+    sintax: text("sintax").notNull(),
 });

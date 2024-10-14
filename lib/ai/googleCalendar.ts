@@ -180,3 +180,69 @@ export async function createEvent({
     throw error;
   }
 }
+
+export async function getEvents(userId: string) {
+  console.log('Starting getEvents function');
+  console.log('User ID:', userId);
+
+  try {
+    console.log('Fetching user account');
+    const userAccount = await db.select().from(accounts).where(eq(accounts.userId, userId)).limit(1).execute();
+    console.log('User account:', userAccount);
+
+    if (!userAccount || !userAccount[0]?.refresh_token) {
+      console.error('Refresh token not found for the user');
+      return { error: 'No se encontró el token de actualización para el usuario' };
+    }
+
+    console.log('Creating OAuth2Client');
+    const oauth2Client = createOAuth2Client();
+
+    console.log('Setting OAuth2Client credentials');
+    oauth2Client.setCredentials({
+      refresh_token: userAccount[0].refresh_token,
+    });
+
+    console.log('Refreshing access token');
+    const { credentials } = await oauth2Client.refreshAccessToken();
+    oauth2Client.setCredentials(credentials);
+
+    console.log('Creating calendar instance');
+    const calendar = google.calendar({ version: 'v3', auth: oauth2Client });
+
+    console.log('Fetching events');
+    const res = await calendar.events.list({
+      calendarId: 'primary',
+      timeMin: DateTime.now().toISO({ suppressMilliseconds: true }),
+      maxResults: 10,
+      singleEvents: true,
+      orderBy: 'startTime',
+    });
+    console.log('Events fetched successfully');
+
+    const events = res.data.items || [];
+    console.log('Events:', events);
+
+    return events.map((event: any) => ({
+      name: event.summary,
+      eventLink: event.htmlLink,
+      startTime: event.start.dateTime || event.start.date,
+      endTime: event.end.dateTime || event.end.date,
+      attendees: event.attendees?.map((attendee: any) => attendee.email) || [],
+    }));
+  } catch (error) {
+    console.error('Error in getEvents function:', error);
+    if (error instanceof Error) {
+      console.error('Error message:', error.message);
+      console.error('Error stack:', error.stack);
+    }
+    if (error instanceof Error && 'response' in error) {
+      const axiosError = error as any;
+      if (axiosError.response?.data?.error) {
+        console.error('Detailed API error:', axiosError.response.data.error);
+      }
+    }
+    throw error;
+  }
+}
+

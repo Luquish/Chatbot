@@ -6,9 +6,10 @@ import { useChat, Message as ChatMessage } from 'ai/react'; // Asegúrate de imp
 import { useEffect, useRef, useState } from 'react';
 import FeedbackButton from '@/components/ui/FeedbackButtons';
 import { useRouter } from 'next/navigation';
-import { useSession, SessionProvider } from 'next-auth/react';
+import { useSession, SessionProvider, signOut } from 'next-auth/react';
 import ProactiveMessages from '@/components/ui/ProactiveMessages';
 import TextareaAutosize from 'react-textarea-autosize';
+import { Button } from "@/components/ui/button"
 
 function ChatComponent() {
     const { data: session, status } = useSession();
@@ -101,9 +102,25 @@ function ChatComponent() {
       }
     };
 
+    const handleSignOut = async () => {
+        await signOut({ redirect: false });
+        router.push('/');
+    };
+
   return (
     <div className="flex flex-col items-center justify-center w-full h-screen" style={{ backgroundColor: '#1E1E1E' }}>
-          <ProactiveMessages onSendProactiveMessage={handleProactiveMessage} />
+      {/* Botón de cierre de sesión */}
+      <div className="absolute top-4 right-4">
+        <Button 
+          onClick={handleSignOut} 
+          variant="outline" 
+          className="bg-white text-black border-white hover:bg-black hover:text-white transition-colors duration-300"
+        >
+          Cerrar Sesión
+        </Button>
+      </div>
+
+      <ProactiveMessages onSendProactiveMessage={handleProactiveMessage} />
       {/* Chat container */}
       <div className="flex flex-col w-full max-w-3xl h-full">
         {/* Mensajes */}
