@@ -6,7 +6,7 @@ import { convertToCoreMessages, streamText, tool } from 'ai';
 import { z } from 'zod';
 import { findRelevantContent } from '../../../lib/ai/embedding';
 import { getServerSession } from "next-auth";
-import { authOptions } from "../auth/[...nextauth]/route";
+import { authOptions } from "@/lib/authOptions";
 import { db } from '@/lib/db';
 import { users } from '@/lib/db/schema/schemas';
 import { eq } from 'drizzle-orm';
