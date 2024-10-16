@@ -5,8 +5,6 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "process-pdfs": "tsx -r tsconfig-paths/register lib/getPDF/processPDFsInFolder.ts ./data/pdfs",
-    "process-csvs": "tsx -r tsconfig-paths/register lib/getCSV/processCSVsInFolder.ts ./data/csvs",
     "start": "next start",
     "lint": "next lint",
     "type-check": "tsc --noEmit",
@@ -17,7 +15,9 @@
     "db:pull": "drizzle-kit introspect",
     "db:push": "drizzle-kit push",
     "db:studio": "drizzle-kit studio",
-    "db:check": "drizzle-kit check"
+    "db:check": "drizzle-kit check",
+    "process-pdfs": "tsx -r tsconfig-paths/register lib/getPDF/processPDFsInFolder.ts ./data/pdfs",
+    "process-csvs": "tsx -r tsconfig-paths/register lib/getCSV/processCSVsInFolder.ts ./data/csvs"
   },
   "dependencies": {
     "@ai-sdk/openai": "^0.0.50",

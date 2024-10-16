@@ -6,7 +6,7 @@ import { db } from "@/lib/db";
 import { accounts, users } from "@/lib/db/schema/schemas";
 import { eq } from "drizzle-orm";
 import bcrypt from "bcrypt";
-import { CustomDrizzleAdapter } from "@/lib/customDrizzleAdapter";
+import { CustomDrizzleAdapter } from "@/lib/auth/customDrizzleAdapter";
 
 export const authOptions: NextAuthOptions = {
   adapter: CustomDrizzleAdapter(db),

@@ -4,10 +4,10 @@
 
 import { useChat, Message as ChatMessage } from 'ai/react'; // Asegúrate de importar Message correctamente
 import { useEffect, useRef, useState } from 'react';
-import FeedbackButton from '@/components/ui/FeedbackButtons';
+import FeedbackButton from '@/app/chat/components/FeedbackButtons';
 import { useRouter } from 'next/navigation';
 import { useSession, SessionProvider, signOut } from 'next-auth/react';
-import ProactiveMessages from '@/components/ui/ProactiveMessages';
+import ProactiveMessages from '@/app/chat/components/ProactiveMessages';
 import TextareaAutosize from 'react-textarea-autosize';
 import { Button } from "@/components/ui/button"
 
