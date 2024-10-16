@@ -7,7 +7,6 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { Button } from "@/components/ui/button"
 import { useRouter } from 'next/navigation'
 
-
 const words = ["VIVIR", "DESCUBRIR", "POTENCIAR", "DISFRUTAR", "PENSAR"]
 
 export default function LandingPage() {

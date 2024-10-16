@@ -9,9 +9,7 @@ import { FcGoogle } from 'react-icons/fc'
 
 const words = ["INNOVAR", "CRECER", "COLABORAR", "APRENDER", "LIDERAR"]
 
-export default function SignInPage() {
-  const [email, setEmail] = useState('')
-  const [password, setPassword] = useState('')
+export default function Component() {
   const [error, setError] = useState('')
   const [currentWord, setCurrentWord] = useState(0)
   const router = useRouter()
@@ -22,21 +20,6 @@ export default function SignInPage() {
     }, 3000)
     return () => clearInterval(interval)
   }, [])
-
-  const handleSignIn = async (e: React.FormEvent) => {
-    e.preventDefault()
-    const res = await signIn('credentials', {
-      redirect: false,
-      email,
-      password,
-    })
-
-    if (res?.ok) {
-      router.push('/chat')
-    } else {
-      setError('Credenciales inválidas. Por favor, intente nuevamente.')
-    }
-  }
 
   const handleGoogleSignIn = async () => {
     try {
@@ -84,36 +67,10 @@ export default function SignInPage() {
               {error}
             </motion.div>
           )}
-          <form onSubmit={handleSignIn} className="space-y-4">
-            <input
-              type="email"
-              placeholder="Correo Electrónico"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              required
-              className="w-full p-3 bg-gray-800 rounded-md focus:outline-none focus:ring-2 focus:ring-purple-500 text-white"
-            />
-            <input
-              type="password"
-              placeholder="Contraseña"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              required
-              className="w-full p-3 bg-gray-800 rounded-md focus:outline-none focus:ring-2 focus:ring-purple-500 text-white"
-            />
-            <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
-              <Button type="submit" className="w-full bg-purple-600 hover:bg-purple-700 text-white">
-                Iniciar Sesión
-              </Button>
-            </motion.div>
-          </form>
-          <div className="mt-4 text-center">
-            <span className="text-gray-400">O</span>
-          </div>
           <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
             <Button
               onClick={handleGoogleSignIn}
-              className="w-full mt-4 bg-white text-gray-800 hover:bg-gray-100 flex items-center justify-center"
+              className="w-full bg-white text-gray-800 hover:bg-gray-100 flex items-center justify-center"
             >
               <FcGoogle className="mr-2" size={20} />
               Iniciar Sesión con Google

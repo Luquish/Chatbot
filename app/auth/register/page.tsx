@@ -51,7 +51,7 @@ export default function RegisterPage() {
 
   return (
         <div className="flex flex-col items-center justify-center min-h-screen bg-black text-white p-4">
-        <form onSubmit={handleRegister} className="w-full max-w-md">
+          <form onSubmit={handleRegister} className="w-full max-w-md">
             <h2 className="text-3xl font-bold mb-6 text-center">Registrarse</h2>
             <input
             type="text"
@@ -80,8 +80,7 @@ export default function RegisterPage() {
             <Button type="submit" className="w-full">
             Crear Cuenta
             </Button>
-        </form>
+          </form>
         </div>
     )
 }
-

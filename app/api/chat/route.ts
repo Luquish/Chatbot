@@ -10,6 +10,9 @@ import { authOptions } from "@/lib/auth/authOptions";
 import { db } from '@/lib/db';
 import { users } from '@/lib/db/schema/schemas';
 import { eq } from 'drizzle-orm';
+import { format, addDays, addWeeks, isBefore, startOfDay } from 'date-fns';
+import { es } from 'date-fns/locale';
+
 // Initialize the groq model
 const groq = createGroq({
   baseURL: 'https://api.groq.com/openai/v1',
@@ -51,12 +54,42 @@ export async function POST(req: Request) {
   console.log('Received messages:', messagesToSend);
   console.log('Proactive prompt:', proactivePrompt);
 
+  const today = new Date();
+  const formattedDate = format(today, "EEEE, d 'de' MMMM 'de' yyyy", { locale: es });
+
+  // Función para obtener el próximo día de la semana
+  const getNextWeekday = (date: Date, weekday: number) => {
+    const result = addDays(date, (weekday + 7 - date.getDay()) % 7);
+    return isBefore(result, startOfDay(addDays(date, 1))) ? addDays(result, 7) : result;
+  };
+
+  const formatDay = (date: Date) => format(date, "EEEE, d 'de' MMMM", { locale: es });
+
+  const tomorrow = addDays(today, 1);
+  const inOneWeek = addWeeks(today, 1);
+  const inTwoWeeks = addWeeks(today, 2);
+
+  const nextDays = Array.from({ length: 7 }, (_, i) => getNextWeekday(today, i));
+
   const result = await streamText({
     model: groq('llama-3.1-70b-versatile'),
     
     messages: convertToCoreMessages(messagesToSend),
 
     system: `Eres un asistente útil de profesionalización y embajador de la cultura de la empresa llamado Onwy. Estás hablando con ${userName} (Dile solo por el nombre). Recuérdalo siempre y avísale a los usuarios cuando comiencen a usarlo.
+
+    Hoy es ${formattedDate}. Usa esta información para interpretar referencias de fechas relativas.
+    Por ejemplo:
+    - "mañana" se refiere a ${formatDay(tomorrow)}
+    - "en una semana" se refiere a ${formatDay(inOneWeek)}
+    - "en dos semanas" se refiere a ${formatDay(inTwoWeeks)}
+    - "el lunes que viene" se refiere a ${formatDay(nextDays[1])}
+    - "el martes que viene" se refiere a ${formatDay(nextDays[2])}
+    - "el miércoles que viene" se refiere a ${formatDay(nextDays[3])}
+    - "el jueves que viene" se refiere a ${formatDay(nextDays[4])}
+    - "el viernes que viene" se refiere a ${formatDay(nextDays[5])}
+    - "el sábado que viene" se refiere a ${formatDay(nextDays[6])}
+    - "el domingo que viene" se refiere a ${formatDay(nextDays[0])}
 
     Inicia la conversación de manera proactiva con un mensaje relacionado a: "${proactivePrompt}". No menciones que esto es un mensaje proactivo, simplemente inicia la conversación de forma natural.
 
@@ -72,13 +105,15 @@ export async function POST(req: Request) {
 
     2. Asegúrate de obtener todos estos datos antes de crear el evento. Si el usuario no proporciona alguno de estos datos, pregúntale específicamente por esa información faltante.
 
-    3. Formatea las fechas y horas de inicio y fin al siguiente formato: "dd de mes a las HH:MM AM/PM". Por ejemplo: "15 de octubre a las 03:00 PM".
+    3. Interpreta referencias de fechas relativas y conviértelas a fechas específicas.
+
+    4. Formatea las fechas y horas de inicio y fin al siguiente formato: "dd de mes a las HH:MM AM/PM". Por ejemplo: "15 de octubre a las 03:00 PM".
         - Si el usuario no proporciona el año, asume el año actual.
         - Asegúrate de usar el formato de 12 horas con AM/PM.
 
-    4. Una vez que tengas todos los datos necesarios y hayas formateado las fechas, envia un resumen del evento al usuario y espera a que te confirme los datos. Luego utiliza la herramienta createCalendarEvent para crear el evento.
+    5. Una vez que tengas todos los datos necesarios y hayas formateado las fechas, envia un resumen del evento al usuario y espera a que te confirme los datos. Luego utiliza la herramienta createCalendarEvent para crear el evento.
 
-    5. Después de crear el evento, confirma al usuario que el evento ha sido creado exitosamente y proporciona un resumen de los detalles del evento junto con el link de la reunión.
+    6. Después de crear el evento, confirma al usuario que el evento ha sido creado exitosamente y proporciona un resumen de los detalles del evento junto con el link de la reunión.
 
     Recuerda ser siempre amable y profesional en tus interacciones.`,
 

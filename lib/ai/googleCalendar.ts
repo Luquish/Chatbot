@@ -246,3 +246,49 @@ export async function getEvents(userId: string) {
   }
 }
 
+async function deleteCalendarEvent(userId: string, eventId: string): Promise<boolean> {
+  try {
+    console.log('Fetching user account');
+    const userAccount = await db.select().from(accounts).where(eq(accounts.userId, userId)).limit(1);
+
+    if (!userAccount || userAccount.length === 0) {
+      throw new Error('User account not found');
+    }
+
+    const oauth2Client = createOAuth2Client();
+
+    console.log('Setting OAuth2Client credentials');
+    oauth2Client.setCredentials({
+      refresh_token: userAccount[0].refresh_token,
+    });
+
+    console.log('Refreshing access token');
+    const { credentials } = await oauth2Client.refreshAccessToken();
+    oauth2Client.setCredentials(credentials);
+
+    console.log('Creating calendar instance');
+    const calendar = google.calendar({ version: 'v3', auth: oauth2Client });
+
+    console.log('Deleting event');
+    await calendar.events.delete({
+      calendarId: 'primary',
+      eventId: eventId,
+    });
+
+    console.log('Event deleted successfully');
+    return true;
+  } catch (error) {
+    console.error('Error in deleteCalendarEvent function:', error);
+    if (error instanceof Error) {
+      console.error('Error message:', error.message);
+      console.error('Error stack:', error.stack);
+    }
+    if (error instanceof Error && 'response' in error) {
+      const axiosError = error as any;
+      if (axiosError.response?.data?.error) {
+        console.error('Detailed API error:', axiosError.response.data.error);
+      }
+    }
+    return false;
+  }
+}
