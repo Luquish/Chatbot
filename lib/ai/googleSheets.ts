@@ -6,7 +6,6 @@ import { eq } from 'drizzle-orm';
 import { db } from '../db';
 
 function createOAuth2Client() {
-  console.log('Creating OAuth2Client');
   return new google.auth.OAuth2(
     process.env.GOOGLE_CLIENT_ID,
     process.env.GOOGLE_CLIENT_SECRET,
@@ -14,16 +13,13 @@ function createOAuth2Client() {
   );
 }
 
-export async function getPayrollData(userId: string, query: string): Promise<string> {
+export async function getPayrollData(userId: string, query: string, userName: string): Promise<string> {
     const spreadsheetId = process.env.SPREADSHEET_ID;
     if (!spreadsheetId) {
       throw new Error('SPREADSHEET_ID no está definido en las variables de entorno');
     }
 
-    console.log('Spreadsheet ID:', spreadsheetId);
-  
     try {
-        console.log('Fetching user account');
         const userAccount = await db.select().from(accounts).where(eq(accounts.userId, userId));
     
         if (!userAccount || userAccount.length === 0) {
@@ -32,107 +28,172 @@ export async function getPayrollData(userId: string, query: string): Promise<str
     
         const oauth2Client = createOAuth2Client();
     
-        console.log('Setting OAuth2Client credentials');
         oauth2Client.setCredentials({
           refresh_token: userAccount[0].refresh_token,
         });
     
-        console.log('Refreshing access token');
         const { credentials } = await oauth2Client.refreshAccessToken();
         oauth2Client.setCredentials(credentials);
     
-        console.log('Creating sheets instance');
         const sheets = google.sheets({ version: 'v4', auth: oauth2Client });
     
-        console.log('Fetching spreadsheet data');
         const response = await sheets.spreadsheets.values.get({
           spreadsheetId,
-          range: 'Sheet1!A1:P1000', // Asegúrate de que este rango sea correcto
+          range: 'Nómina!A1:P1000',
         });
-    
-        console.log('Response:', JSON.stringify(response.data, null, 2));
 
         const data = response.data.values || [];
         if (data.length === 0) {
-        return "No se encontraron datos en la hoja de cálculo.";
+          return "No se encontraron datos en la hoja de cálculo.";
         }
 
         const headers = data[0];
         const employees = data.slice(1);
 
-        const [queryType, name] = query.split(':').map(s => s.trim());
+        function processQuery(query: string): string {
+            query = query.toLowerCase();
 
-        const employeeIndex = employees.findIndex(row => 
-        row[3].toLowerCase().includes(name.toLowerCase()) || row[4].toLowerCase().includes(name.toLowerCase())
-        );
+            // Function to normalize strings for comparison
+            const normalize = (str: string) => str.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
 
-        if (employeeIndex === -1) {
-        return `No se encontró ningún empleado con el nombre ${name}.`;
+            // Function to capitalize first letter of each word
+            const capitalize = (str: string) => str.replace(/\b\w/g, l => l.toUpperCase());
+
+            // Function to find employees by name
+            const findEmployees = (name: string) => {
+                const normalizedName = normalize(name);
+                const nameParts = normalizedName.split(' ');
+                
+                const exactMatches = employees.filter(row => {
+                    const firstName = normalize(row[4]);
+                    const lastName = normalize(row[3]);
+                    const fullName = `${firstName} ${lastName}`;
+                    return fullName === normalizedName || 
+                           firstName === normalizedName || 
+                           lastName === normalizedName;
+                });
+
+                if (exactMatches.length > 0) {
+                    return exactMatches;
+                }
+
+                // Si no hay coincidencias exactas, buscamos coincidencias parciales más estrictas
+                const partialMatches = employees.filter(row => {
+                    const firstName = normalize(row[4]);
+                    const lastName = normalize(row[3]);
+                    
+                    // Verificamos que cada parte del nombre buscado coincida exactamente con el inicio de un nombre o apellido
+                    return nameParts.every(part => 
+                        firstName.startsWith(part) || lastName.startsWith(part)
+                    );
+                });
+
+                return partialMatches;
+            };
+
+            // Helper function to handle multiple matches
+            const handleMultipleMatches = (matches: any[], name: string) => {
+                if (matches.length > 1) {
+                    const employeeList = matches.map((emp, index) => 
+                        `${index + 1}. ${capitalize(emp[4])} ${capitalize(emp[3])} - ${emp[10]}`
+                    ).join('\n');
+                    return `Encontré múltiples empleados que coinciden con "${name}". Por favor, especifica a cuál te refieres:\n${employeeList}`;
+                }
+                return null;
+            };
+
+            // New function to find the current user
+            const findCurrentUser = (userName: string) => {
+                const normalizedUserName = normalize(userName);
+                const userNameParts = normalizedUserName.split(' ');
+                
+                return employees.find(row => {
+                    const firstName = normalize(row[4]);
+                    const lastName = normalize(row[3]);
+                    const fullName = `${firstName} ${lastName}`;
+                    
+                    // Check if the full name matches exactly
+                    if (fullName === normalizedUserName) {
+                        return true;
+                    }
+                    
+                    // If not an exact match, check if all parts of the userName are present in the full name
+                    if (userNameParts.length > 1) {
+                        return userNameParts.every(part => fullName.includes(part));
+                    }
+                    
+                    // If only one part is provided, it must match either the first name or last name exactly
+                    return firstName === normalizedUserName || lastName === normalizedUserName;
+                });
+            };
+
+            // Get current user's data
+            const currentUser = findCurrentUser(userName) || Array(headers.length).fill('');
+            const getCurrentUserData = () => {
+                if (currentUser.some(field => field !== '')) {
+                    return `Información del usuario actual (${capitalize(currentUser[4])} ${capitalize(currentUser[3])}):\n` +
+                           headers.map((header, index) => `${header}: ${currentUser[index] || 'No disponible'}`).join("\n");
+                } else {
+                    return `No se encontraron datos exactos para el usuario "${userName}" en la nómina. Por favor, verifica que el nombre esté escrito correctamente o contacta a RRHH si crees que esto es un error.`;
+                }
+            };
+
+            // Handler for current user data queries
+            if (query.includes("mis datos") || query.includes("mi información")) {
+                return getCurrentUserData();
+            }
+
+            // Handler for "toda la información" queries
+            if (query.includes("todo sobre") || query.includes("toda la información") || query.includes("todos los datos")) {
+                const name = query.split(/sobre|de/).pop()?.trim() || "";
+                let matches = findEmployees(name);
+                
+                const multipleMatchesResponse = handleMultipleMatches(matches, name);
+                if (multipleMatchesResponse) return multipleMatchesResponse;
+
+                if (matches.length === 0) {
+                    return `No se encontró ningún empleado con el nombre ${name}.`;
+                }
+
+                const employee = matches[0];
+                return headers.map((header, index) => `${header}: ${employee[index] || 'No disponible'}`).join("\n");
+            }
+
+            // Handler for general name queries
+            if (query.includes("que sabes de") || query.startsWith("sobre")) {
+                const name = query.split(/que sabes de|sobre/).pop()?.trim() || "";
+                let matches = findEmployees(name);
+                
+                if (matches.length === 0) {
+                    return `No se encontró ningún empleado con el nombre "${name}". ¿Quieres que busque nombres similares?`;
+                }
+
+                const multipleMatchesResponse = handleMultipleMatches(matches, name);
+                if (multipleMatchesResponse) return multipleMatchesResponse;
+
+                const employee = matches[0];
+                return headers.map((header, index) => `${header}: ${employee[index] || 'No disponible'}`).join("\n");
+            }
+
+            // Si no se ha encontrado un tipo de consulta específico, realizar una búsqueda general
+            const matches = findEmployees(query);
+            if (matches.length > 0) {
+                return `Encontré ${matches.length} empleado(s) que coinciden con tu búsqueda:\n${matches.map(row => 
+                    `${capitalize(row[4])} ${capitalize(row[3])}: ${row[10]}`
+                ).join("\n")}`;
+            } else {
+                return "No se encontraron resultados para tu búsqueda.";
+            }
         }
 
-        const employee = employees[employeeIndex];
+        return processQuery(query);
 
-        if (queryType.toLowerCase() === 'todo' || queryType.toLowerCase() === 'toda la información') {
-            return `
-              Información completa de ${employee[3]} ${employee[4]}:
-              - Sede: ${employee[0]}
-              - Tipo de empleo: ${employee[1]}
-              - Legajo: ${employee[2]}
-              - Fecha de inicio: ${employee[5]}
-              - División: ${employee[6]}
-              - Área: ${employee[7]}
-              - Subárea: ${employee[8]}
-              - Equipo: ${employee[9]}
-              - Cargo: ${employee[10]}
-              - Seniority: ${employee[11]}
-              - Dependencia organigrama: ${employee[12]}
-              - Fecha de nacimiento: ${employee[13]}
-              - Género: ${employee[14]}
-              - Nacionalidad: ${employee[15]}`;
-          }
-
-          switch (queryType.toLowerCase()) {
-            case 'sede':
-                return `La sede de ${employee[3]} ${employee[4]} es ${employee[0]}.`;
-            case 'tipo de empleo':
-                return `El tipo de empleo de ${employee[3]} ${employee[4]} es ${employee[1]}.`;
-            case 'legajo':
-                return `El legajo de ${employee[3]} ${employee[4]} es ${employee[2]}.`;
-            case 'fecha de inicio':
-                return `La fecha de inicio de ${employee[3]} ${employee[4]} es ${employee[5]}.`;
-            case 'división':
-                return `La división de ${employee[3]} ${employee[4]} es ${employee[6]}.`;
-            case 'área':
-                return `${employee[3]} ${employee[4]} trabaja en el área de ${employee[7]}.`;
-            case 'subárea':
-              return `La subárea de ${employee[3]} ${employee[4]} es ${employee[8]}.`;
-            case 'equipo':
-                return `El equipo de ${employee[3]} ${employee[4]} es ${employee[9]}.`;
-            case 'cargo':
-                return `El cargo de ${employee[3]} ${employee[4]} es ${employee[10]}.`;
-            case 'seniority':
-                return `El seniority de ${employee[3]} ${employee[4]} es ${employee[11]}.`;
-            case 'dependencia organigrama':
-                return `La dependencia organigrama de ${employee[3]} ${employee[4]} es ${employee[12]}.`;
-            case 'fecha de nacimiento':
-            case 'cumpleaños':
-                return `La fecha de nacimiento de ${employee[3]} ${employee[4]} es ${employee[13]}.`;
-            case 'género':
-                return `El género de ${employee[3]} ${employee[4]} es ${employee[14]}.`;
-            case 'nacionalidad':
-                return `La nacionalidad de ${employee[3]} ${employee[4]} es ${employee[15]}.`;
-            default:
-                return `No se pudo procesar la consulta. Por favor, especifica qué información quieres saber sobre ${name} o solicita "toda la información".`;
-            }
-        } catch (error) {
-            console.error('Error in getPayrollData function:', error);
-            if (error instanceof Error) {
-              console.error('Error message:', error.message);
-              console.error('Error stack:', error.stack);
-              if (error.message.includes('This operation is not supported for this document')) {
-                return "Lo siento, no puedo acceder a la información en este momento debido a un problema de permisos o configuración. Por favor, verifica que la hoja de cálculo esté compartida correctamente y que el ID sea el correcto.";
-              }
-            }
-            throw error;
+    } catch (error) {
+        if (error instanceof Error) {
+          if (error.message.includes('This operation is not supported for this document')) {
+            return "Lo siento, no puedo acceder a la información en este momento debido a un problema de permisos o configuración. Por favor, verifica que la hoja de cálculo esté compartida correctamente y que el ID sea el correcto.";
           }
         }
+        throw error;
+    }
+}

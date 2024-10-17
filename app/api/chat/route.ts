@@ -12,6 +12,7 @@ import { users } from '@/lib/db/schema/schemas';
 import { eq } from 'drizzle-orm';
 import { format, addDays, addWeeks, isBefore, startOfDay } from 'date-fns';
 import { es } from 'date-fns/locale';
+import { getPayrollData } from '../../../lib/ai/googleSheets';
 
 // Initialize the groq model
 const groq = createGroq({
@@ -91,7 +92,49 @@ export async function POST(req: Request) {
     - "el sábado que viene" se refiere a ${formatDay(nextDays[6])}
     - "el domingo que viene" se refiere a ${formatDay(nextDays[0])}
 
-    Inicia la conversación de manera proactiva con un mensaje relacionado a: "${proactivePrompt}". No menciones que esto es un mensaje proactivo, simplemente inicia la conversación de forma natural.
+    Tienes acceso a información detallada sobre los empleados de la empresa a través de la herramienta getEmployeeInfo. Utiliza esta herramienta para responder preguntas sobre los empleados. Aquí tienes una guía sobre cómo manejar diferentes tipos de consultas:
+
+    1. Información general:
+       - "¿Qué sabes de [Nombre]?" o "Háblame sobre [Nombre]" -> Usa getEmployeeInfo con el nombre completo.
+       - "Dame toda la información de [Nombre]" -> Usa getEmployeeInfo con el nombre completo.
+
+    2. Preguntas específicas:
+       - Cumpleaños: "¿Cuándo cumple años [Nombre]?" -> Usa getEmployeeInfo y busca la "Fecha de nacimiento".
+       - Cargo: "¿Qué cargo tiene [Nombre]?" o "¿En qué trabaja [Nombre]?" -> Busca el campo "Cargo".
+       - Sede: "¿Dónde trabaja [Nombre]?" -> Busca el campo "Sede".
+       - Antigüedad: "¿Cuándo empezó a trabajar [Nombre]?" -> Busca "Fecha de inicio".
+       - Área o división: "¿En qué área trabaja [Nombre]?" -> Busca los campos "División", "Área" y "Subárea".
+       - Jefe directo: "¿Quién es el jefe de [Nombre]?" -> Busca "Dependencia organigrama".
+
+    3. Consultas por atributos:
+       - Nacionalidad: "¿Quiénes son de [País]?" -> Usa getEmployeeInfo con "nacionalidad [País]".
+       - Sede: "¿Quiénes trabajan en [Sede]?" -> Usa getEmployeeInfo con "sede [Sede]".
+       - Cargo: "¿Quiénes son [Cargo]?" -> Usa getEmployeeInfo con "cargo [Cargo]".
+       - Área: "¿Quién trabaja en [Área]?" -> Usa getEmployeeInfo con "área [Área]".
+
+    4. Estadísticas:
+       - "¿Cuántos empleados hay en total?" -> Usa getEmployeeInfo con "total empleados".
+       - "¿Cuántos [Cargo] hay?" -> Usa getEmployeeInfo con "cantidad [Cargo]".
+
+    5. Información del usuario actual (${userName}):
+       - El nombre del usuario actual es ${userName}. Siempre que el usuario pregunte por su nombre, responde con este nombre sin usar getEmployeeInfo.
+       - Para todas las demás preguntas sobre sí mismo o cuando use palabras como "yo", "mi", "mis", etc., usa getEmployeeInfo con "mis datos".
+       - Ejemplos:
+         - "¿Cómo me llamo?" o "¿Cuál es mi nombre?" -> Responde directamente con "${userName}" sin usar getEmployeeInfo.
+         - "¿Cuáles son mis datos?" o "Muestra mi información" -> Usa getEmployeeInfo con "mis datos".
+         - "¿Cuál es mi cargo?" -> Usa getEmployeeInfo con "mis datos" y busca el campo "Cargo".
+         - "¿En qué sede trabajo?" -> Usa getEmployeeInfo con "mis datos" y busca el campo "Sede".
+         - "¿Cuándo empecé a trabajar?" -> Usa getEmployeeInfo con "mis datos" y busca "Fecha de inicio".
+       - Para cualquier otra pregunta que el usuario haga sobre sí mismo, usa getEmployeeInfo con "mis datos" y busca el campo relevante.
+       - Si el usuario pregunta "¿Quién soy?" o algo similar, responde con "Eres ${userName}" y luego usa getEmployeeInfo con "mis datos" para proporcionar un resumen breve de su información laboral.
+
+    Recuerda:
+    - Siempre que el usuario pregunte por su nombre, responde con "${userName}" sin necesidad de usar getEmployeeInfo.
+    - Para todas las demás preguntas sobre el usuario actual, usa getEmployeeInfo con "mis datos".
+    - Si no se encuentran datos para el usuario actual en la nómina, informa amablemente que no se pudo encontrar la información en la base de datos y sugiere que se ponga en contacto con el departamento de RRHH.
+    - Sé discreto con la información personal y solo proporciona los datos específicos que el usuario solicita sobre sí mismo.
+
+    Cuando recibas la información de getEmployeeInfo, formatea la respuesta de manera legible y amigable. Si la información viene en formato de lista, preséntala de manera ordenada y clara.
 
     Cuando el usuario solicite crear un evento en el calendario, sigue estos pasos:
 
@@ -115,7 +158,7 @@ export async function POST(req: Request) {
 
     6. Después de crear el evento, confirma al usuario que el evento ha sido creado exitosamente y proporciona un resumen de los detalles del evento junto con el link de la reunión.
 
-    Recuerda ser siempre amable y profesional en tus interacciones.`,
+    Recuerda ser siempre amable, profesional y discreto en tus interacciones, especialmente cuando manejes información sensible de los empleados.`,
 
     tools: {
         addResource: tool({
@@ -151,6 +194,13 @@ export async function POST(req: Request) {
               return createEvent({ summary, description, location, startDateTime, endDateTime, userId, attendeesEmails });
             },
           }),
+        getEmployeeInfo: tool({
+          description: `get information about employees from the company's database`,
+          parameters: z.object({
+            query: z.string().describe('the query string containing the type of information requested about employees'),
+          }),
+          execute: async ({ query }) => getPayrollData(userId, query, userName),
+        }),
     },
  });
 
