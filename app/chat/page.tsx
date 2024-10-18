@@ -91,8 +91,7 @@ function ChatComponent() {
 
     // Función para enviar el mensaje
     const sendMessage = () => {
-      if (!isBotResponding && input.trim() !== '') {
-        setIsBotResponding(true);
+      if (input.trim() !== '') {
         handleSubmit();
       }
     };
@@ -137,7 +136,7 @@ function ChatComponent() {
               >
                 <div
                   className={`p-3 rounded-lg shadow-lg ${
-                    m.role === 'user' ? 'bg-gray-800 text-white' : 'bg-green-500 text-white'
+                    m.role === 'user' ? 'bg-gray-800 text-white' : 'bg-gray-700 text-white'
                   }`}
                   style={{
                     maxWidth: '80%',
@@ -146,7 +145,7 @@ function ChatComponent() {
                     borderRadius: '15px',
                   }}
                 >
-                  <div className={`font-bold ${m.role === 'user' ? 'text-green-400' : 'text-white'}`}>
+                  <div className={`font-bold ${m.role === 'user' ? 'text-green-400' : 'text-blue-300'}`}>
                     {m.role === 'user' ? 'You' : 'Onwy'}
                   </div>
                   <p className="mt-1">
@@ -166,7 +165,7 @@ function ChatComponent() {
             {isBotResponding && (
               <div className="whitespace-pre-wrap flex justify-start">
                 <div
-                  className="p-3 rounded-lg shadow-lg bg-green-500 text-white"
+                  className="p-3 rounded-lg shadow-lg bg-gray-700 text-white"
                   style={{
                     maxWidth: '80%',
                     minWidth: '150px',
@@ -174,7 +173,7 @@ function ChatComponent() {
                     borderRadius: '15px',
                   }}
                 >
-                  <div className="font-bold text-white">Onwy</div>
+                  <div className="font-bold text-blue-300">Onwy</div>
                   <p className="mt-1 italic">Bot is typing...</p>
                 </div>
               </div>
@@ -205,7 +204,6 @@ function ChatComponent() {
               placeholder="Type your message here..."
               onChange={handleInputChange}
               onKeyDown={handleKeyDown}
-              // Removido el atributo 'disabled'
               minRows={1}
               maxRows={5}
               style={{
@@ -214,9 +212,9 @@ function ChatComponent() {
             />
             <button
               type="submit"
-              disabled={isBotResponding || input.trim() === ''}
+              disabled={input.trim() === ''}
               className={`absolute right-2 bottom-3 p-2 rounded-full transition-colors duration-200 ${
-                isBotResponding || input.trim() === ''
+                input.trim() === ''
                   ? 'text-gray-400 cursor-not-allowed'
                   : 'text-green-500 hover:text-green-600'
               }`}
