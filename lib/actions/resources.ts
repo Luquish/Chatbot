@@ -9,10 +9,10 @@ import {
 import { db } from '../db';
 import { generateEmbeddings } from '../ai/embedding';
 import { embeddings as embeddingsTable } from '../db/schema/embeddings';
-import { generateSentences, generateChunksWithOverlap, removeHyphenations } from '../utils/chunking';
+import { removeHyphenations, splitContentIntoSections } from '../utils/chunking';
 
 interface CreateResourceOptions {
-  overlapChars?: number; // Número de caracteres para superposición; 0 o undefined para sin superposición
+  overlapChars?: number;
 }
 
 export const createResource = async (input: NewResourceParams, options?: CreateResourceOptions) => {
@@ -22,44 +22,41 @@ export const createResource = async (input: NewResourceParams, options?: CreateR
     // Elimina guiones de silabación
     const cleanedContent = removeHyphenations(content);
 
-    // Divide el contenido en oraciones
-    const sentences = generateSentences(cleanedContent);
-
-    // Genera chunks con o sin superposición según las opciones
-    let chunks: string[];
-
-    if (options && options.overlapChars && options.overlapChars > 0) {
-      // Con superposición
-      const maxLength = 500; // Define el tamaño máximo del chunk, ajustar según necesidad
-      chunks = generateChunksWithOverlap(sentences, maxLength, options.overlapChars);
-    } else {
-      // Sin superposición, cada chunk es una oración
-      chunks = sentences;
-    }
+    // Divide el contenido en secciones basadas en subtítulos y criterios especificados
+    const sections = splitContentIntoSections(cleanedContent);
 
     // Inicia una transacción para asegurar la consistencia
     await db.transaction(async (tx) => {
-      // Inserta el recurso en `resources`
-      const [resource] = await tx
-        .insert(resources)
-        .values([{ content: cleanedContent }])
-        .returning();
+      for (const section of sections) {
+        // Verifica si la sección tiene al menos 10 palabras
+        if (section.split(/\s+/).length < 10) continue;
 
-      // Genera embeddings para los chunks
-      const embeddingsData = await generateEmbeddings(chunks);
+        // Inserta el recurso en `resources`
+        const [resource] = await tx
+          .insert(resources)
+          .values([{ content: section }])
+          .returning();
 
-      // Prepara los datos para insertar en `embeddings`
-      const embeddingsToInsert = embeddingsData.map(embedding => ({
-        resourceId: resource.id,
-        content: embedding.content,
-        embedding: embedding.embedding,
-      }));
+        // Genera embeddings para la sección
+        const embeddingsData = await generateEmbeddings([section]);
 
-      // Inserta los embeddings en la tabla `embeddings`
-      await tx.insert(embeddingsTable).values(embeddingsToInsert);
+        // Prepara los datos para insertar en `embeddings`
+        const embeddingsToInsert = embeddingsData
+          .filter(embedding => embedding.content.split(/\s+/).length >= 2) // Filtra embeddings con menos de 2 palabras
+          .map(embedding => ({
+            resourceId: resource.id,
+            content: embedding.content,
+            embedding: embedding.embedding,
+          }));
+
+        // Inserta los embeddings en la tabla `embeddings`
+        if (embeddingsToInsert.length > 0) {
+          await tx.insert(embeddingsTable).values(embeddingsToInsert);
+        }
+      }
     });
 
-    return 'Resource successfully created and embedded.';
+    return 'Resources successfully created and embedded.';
   } catch (error) {
     console.error(error);
     return error instanceof Error && error.message.length > 0

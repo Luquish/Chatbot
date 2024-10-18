@@ -3,6 +3,10 @@ import { accounts } from '../db/schema/schemas';
 import { eq } from 'drizzle-orm';
 import { db } from '../db';
 import { DateTime } from 'luxon';
+import { format } from 'date-fns';
+import { es } from 'date-fns/locale';
+import { users } from '../db/schema/schemas';
+
 
 function createOAuth2Client() {
   console.log('Creating OAuth2Client');
@@ -130,7 +134,6 @@ export async function createEvent({
       description: description,
       location: location,
       attendees: attendeesEmails.map(email => ({ email })),
-      // eventType: eventType, // Eliminar este campo
     };
 
     // Asignar los campos start y end correctamente
@@ -181,9 +184,11 @@ export async function createEvent({
   }
 }
 
-export async function getEvents(userId: string) {
+export async function getEvents(userId: string, startDate?: Date, endDate?: Date) {
   console.log('Starting getEvents function');
   console.log('User ID:', userId);
+  console.log('Start Date:', startDate);
+  console.log('End Date:', endDate);
 
   try {
     console.log('Fetching user account');
@@ -211,13 +216,24 @@ export async function getEvents(userId: string) {
     const calendar = google.calendar({ version: 'v3', auth: oauth2Client });
 
     console.log('Fetching events');
-    const res = await calendar.events.list({
+    const params: any = {
       calendarId: 'primary',
-      timeMin: DateTime.now().toISO({ suppressMilliseconds: true }),
       maxResults: 10,
       singleEvents: true,
       orderBy: 'startTime',
-    });
+    };
+
+    if (startDate) {
+      params.timeMin = startDate.toISOString();
+    } else {
+      params.timeMin = new Date().toISOString();
+    }
+
+    if (endDate) {
+      params.timeMax = endDate.toISOString();
+    }
+
+    const res = await calendar.events.list(params);
     console.log('Events fetched successfully');
 
     const events = res.data.items || [];
@@ -242,7 +258,274 @@ export async function getEvents(userId: string) {
         console.error('Detailed API error:', axiosError.response.data.error);
       }
     }
+    return []; // Return an empty array instead of an error object
+  }
+}
+
+export async function checkAvailability(userId: string, otherUserEmail: string, date?: string): Promise<string> {
+  try {
+    // Fetch user data from the database
+    const userAccount = await db.select().from(accounts).where(eq(accounts.userId, userId)).limit(1);
+    if (!userAccount || userAccount.length === 0) {
+      throw new Error('User account not found');
+    }
+
+    // Fetch other user's data from the database
+    const otherUser = await db.select().from(users).where(eq(users.email, otherUserEmail)).limit(1);
+    if (!otherUser || otherUser.length === 0) {
+      throw new Error('Other user not found');
+    }
+
+    const oauth2Client = createOAuth2Client();
+    oauth2Client.setCredentials({
+      refresh_token: userAccount[0].refresh_token,
+    });
+
+    const { credentials } = await oauth2Client.refreshAccessToken();
+    oauth2Client.setCredentials(credentials);
+
+    const calendar = google.calendar({ version: 'v3', auth: oauth2Client });
+
+    // If no specific date is provided, check availability for the next 7 days
+    const startDate = date ? new Date(date) : new Date();
+    const endDate = date ? new Date(date) : new Date(startDate.getTime() + 7 * 24 * 60 * 60 * 1000);
+
+    const userEventsResult = await getEvents(userId, startDate, endDate);
+    const otherUserEventsResult = await getEvents(otherUser[0].id, startDate, endDate);
+
+    const userEvents = Array.isArray(userEventsResult) ? userEventsResult : [];
+    const otherUserEvents = Array.isArray(otherUserEventsResult) ? otherUserEventsResult : [];
+
+    const busySlots = [...userEvents, ...otherUserEvents].map(event => ({
+      start: new Date(event.startTime),
+      end: new Date(event.endTime)
+    }));
+
+    // Find available slots
+    const availableSlots = findAvailableSlots(startDate, endDate, busySlots);
+
+    if (availableSlots.length === 0) {
+      return "No hay horarios disponibles en el período solicitado.";
+    }
+
+    // Format the response
+    let response = date 
+      ? `Horarios disponibles para el ${format(startDate, "d 'de' MMMM", { locale: es })}:\n`
+      : "Horarios disponibles en los próximos 7 días:\n";
+
+    availableSlots.forEach(slot => {
+      response += `- ${format(slot.start, "d 'de' MMMM 'de' yyyy 'a las' HH:mm", { locale: es })} - ${format(slot.end, "HH:mm", { locale: es })}\n`;
+    });
+
+    return response;
+  } catch (error) {
+    console.error('Error in checkAvailability function:', error);
     throw error;
   }
 }
 
+function findAvailableSlots(startDate: Date, endDate: Date, busySlots: {start: Date, end: Date}[]): {start: Date, end: Date}[] {
+  const availableSlots = [];
+  let currentTime = new Date(startDate);
+
+  while (currentTime < endDate) {
+    const dayStart = new Date(currentTime.setHours(9, 0, 0, 0));
+    const dayEnd = new Date(currentTime.setHours(18, 0, 0, 0));
+
+    let slotStart = dayStart;
+    busySlots.forEach(busySlot => {
+      if (busySlot.start > slotStart && busySlot.start < dayEnd) {
+        if (busySlot.start.getTime() - slotStart.getTime() >= 30 * 60 * 1000) {
+          availableSlots.push({start: slotStart, end: busySlot.start});
+        }
+        slotStart = busySlot.end;
+      }
+    });
+
+    if (slotStart < dayEnd) {
+      availableSlots.push({start: slotStart, end: dayEnd});
+    }
+
+    currentTime.setDate(currentTime.getDate() + 1);
+  }
+
+  return availableSlots;
+}
+
+export async function deleteEventByTitle(userId: string, eventTitle: string) {
+  console.log('Starting deleteEventByTitle function');
+  console.log('User ID:', userId);
+  console.log('Event Title:', eventTitle);
+
+  try {
+    console.log('Fetching user account');
+    const userAccount = await db.select().from(accounts).where(eq(accounts.userId, userId)).limit(1).execute();
+    console.log('User account:', userAccount);
+
+    if (!userAccount || !userAccount[0]?.refresh_token) {
+      console.error('Refresh token not found for the user');
+      return { error: 'No se encontró el token de actualización para el usuario' };
+    }
+
+    console.log('Creating OAuth2Client');
+    const oauth2Client = createOAuth2Client();
+
+    console.log('Setting OAuth2Client credentials');
+    oauth2Client.setCredentials({
+      refresh_token: userAccount[0].refresh_token,
+    });
+
+    console.log('Refreshing access token');
+    const { credentials } = await oauth2Client.refreshAccessToken();
+    oauth2Client.setCredentials(credentials);
+
+    console.log('Creating calendar instance');
+    const calendar = google.calendar({ version: 'v3', auth: oauth2Client });
+
+    console.log('Searching for events with the given title');
+    const events = await calendar.events.list({
+      calendarId: 'primary',
+      q: eventTitle,
+      singleEvents: true,
+      orderBy: 'startTime',
+    });
+
+    if (!events.data.items || events.data.items.length === 0) {
+      console.log('No events found with the given title');
+      return { message: 'No se encontraron eventos con el título proporcionado.' };
+    }
+
+    console.log(`Found ${events.data.items.length} event(s) with the given title`);
+    const event = events.data.items[0];
+
+    console.log('Deleting event');
+    await calendar.events.delete({
+      calendarId: 'primary',
+      eventId: event.id!,
+    });
+
+    console.log('Event deleted successfully');
+    return { message: `El evento "${eventTitle}" ha sido eliminado con éxito.` };
+  } catch (error) {
+    console.error('Error in deleteEventByTitle function:', error);
+    if (error instanceof Error) {
+      console.error('Error message:', error.message);
+      console.error('Error stack:', error.stack);
+    }
+    if (error instanceof Error && 'response' in error) {
+      const axiosError = error as any;
+      if (axiosError.response?.data?.error) {
+        console.error('Detailed API error:', axiosError.response.data.error);
+      }
+    }
+    throw error;
+  }
+}
+
+export async function modifyEvent({
+  userId,
+  eventId,
+  summary,
+  description,
+  location,
+  startDateTime,
+  endDateTime,
+  attendeesEmails,
+}: {
+  userId: string,
+  eventId: string,
+  summary?: string,
+  description?: string,
+  location?: string,
+  startDateTime?: string,
+  endDateTime?: string,
+  attendeesEmails?: string[],
+}) {
+  console.log('Starting modifyEvent function');
+  console.log('User ID:', userId);
+  console.log('Event ID:', eventId);
+
+  try {
+    console.log('Fetching user account');
+    const userAccount = await db.select().from(accounts).where(eq(accounts.userId, userId)).limit(1).execute();
+    console.log('User account:', userAccount);
+
+    if (!userAccount || !userAccount[0]?.refresh_token) {
+      console.error('Refresh token not found for the user');
+      return { error: 'No se encontró el token de actualización para el usuario' };
+    }
+
+    console.log('Creating OAuth2Client');
+    const oauth2Client = createOAuth2Client();
+
+    console.log('Setting OAuth2Client credentials');
+    oauth2Client.setCredentials({
+      refresh_token: userAccount[0].refresh_token,
+    });
+
+    console.log('Refreshing access token');
+    const { credentials } = await oauth2Client.refreshAccessToken();
+    oauth2Client.setCredentials(credentials);
+
+    console.log('Creating calendar instance');
+    const calendar = google.calendar({ version: 'v3', auth: oauth2Client });
+
+    // Obtener el evento existente
+    const existingEvent = await calendar.events.get({
+      calendarId: 'primary',
+      eventId: eventId,
+    });
+
+    const event: any = {
+      summary: summary || existingEvent.data.summary,
+      description: description || existingEvent.data.description,
+      location: location || existingEvent.data.location,
+      start: existingEvent.data.start,
+      end: existingEvent.data.end,
+      attendees: attendeesEmails ? attendeesEmails.map(email => ({ email })) : existingEvent.data.attendees,
+    };
+
+    // Solo parsear y actualizar las fechas si se proporcionan nuevas
+    if (startDateTime) {
+      const parsedStart = parseDateTime(startDateTime);
+      event.start = parsedStart.date ? { date: parsedStart.date } : { dateTime: parsedStart.dateTime, timeZone: parsedStart.timeZone };
+    }
+
+    if (endDateTime) {
+      const parsedEnd = parseDateTime(endDateTime);
+      event.end = parsedEnd.date ? { date: parsedEnd.date } : { dateTime: parsedEnd.dateTime, timeZone: parsedEnd.timeZone };
+    }
+
+    console.log('Event object:', event);
+
+    console.log('Updating event');
+    const res = await calendar.events.update({
+      calendarId: 'primary',
+      eventId: eventId,
+      requestBody: event,
+      sendUpdates: 'all',
+    });
+    console.log('Event updated successfully');
+
+    return {
+      name: event.summary,
+      eventLink: res.data.htmlLink,
+      startTime: event.start.dateTime || event.start.date,
+      endTime: event.end.dateTime || event.end.date,
+      attendees: event.attendees?.map((attendee: any) => attendee.email) || [],
+    };
+  } catch (error) {
+    console.error('Error in modifyEvent function:', error);
+    if (error instanceof Error) {
+      console.error('Error message:', error.message);
+      console.error('Error stack:', error.stack);
+    }
+    if (error instanceof Error && 'response' in error) {
+      const axiosError = error as any;
+      if (axiosError.response?.data?.error) {
+        console.error('Detailed API error:', axiosError.response.data.error);
+      }
+    }
+    throw error;
+  }
+}

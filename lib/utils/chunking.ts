@@ -58,3 +58,51 @@ export const generateSentences = (input: string): string[] => {
     return chunks;
   };
   
+  export function splitContentIntoSections(content: string): string[] {
+    const lines = content.split('\n');
+    const sections: string[] = [];
+    let currentSection = '';
+
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i].trim();
+
+      // Ignora líneas vacías y bibliografías/pies de página
+      if (line === '' || line.startsWith('Bibliography') || line.match(/^\[\d+\]/)) {
+        continue;
+      }
+
+      // Detecta subtítulos (negrita, itálica o enumerados)
+      if (line.match(/^(\*\*|\*|_|#{1,6}|\d+\.)\s*\w+/) || line.endsWith(':')) {
+        if (currentSection) {
+          sections.push(currentSection.trim());
+        }
+        currentSection = line + '\n';
+      } else {
+        // Maneja bullets
+        if (line.startsWith('•') || line.startsWith('-')) {
+          currentSection += line + '\n';
+        } else if (line.includes(':')) {
+          // Maneja líneas con dos puntos
+          const [prefix, ...rest] = line.split(':');
+          if (rest.length > 0) {
+            currentSection += line + '\n';
+          } else {
+            // Si solo hay contenido antes de los dos puntos, lo consideramos un subtítulo
+            if (currentSection) {
+              sections.push(currentSection.trim());
+            }
+            currentSection = line + '\n';
+          }
+        } else {
+          currentSection += line + '\n';
+        }
+      }
+    }
+
+    // Añade la última sección si existe
+    if (currentSection) {
+      sections.push(currentSection.trim());
+    }
+
+    return sections;
+  }

@@ -35,21 +35,14 @@ export const processPDF = async (filePath: string) => {
     // Limpia el texto eliminando guiones de silabación
     const cleanedText = removeHyphenations(pdfText);
 
-    // Divide el texto en párrafos (asumiendo que los párrafos están separados por dobles saltos de línea)
-    const paragraphs = cleanedText.split(/\n\s*\n/).map(paragraph => paragraph.trim()).filter(paragraph => paragraph.length > 0);
-
-    // Define la cantidad de caracteres para la superposición
-    const overlapChars = 50; // Ajusta según necesidad
-
-    // Crea un recurso por cada párrafo, aplicando superposición en los embeddings
-    for (const paragraph of paragraphs) {
-      const input = { content: paragraph };
-      const result = await createResource(input, { overlapChars });
-      console.log(result); // 'Resource successfully created and embedded.'
-    }
+    // Crea un único recurso para todo el contenido del PDF
+    const input = { content: cleanedText };
+    const result = await createResource(input);
+    console.log(result);
 
     return 'PDF procesado y guardado correctamente.';
   } catch (error) {
+    // Manejo de errores
     console.error(
       error instanceof Error && error.message.length > 0
         ? error.message

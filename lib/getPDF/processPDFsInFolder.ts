@@ -4,13 +4,16 @@ import { processPDF } from '@/lib/getPDF/readPDF'; // Ruta correcta utilizando a
 import * as fs from 'fs';
 import * as path from 'path';
 
+// Función principal para procesar todos los PDF en una carpeta
 export const processPDFsInFolder = async (folderPath: string) => {
   try {
     const files = fs.readdirSync(folderPath);
 
+    // Itera sobre cada archivo en la carpeta
     for (const file of files) {
       const filePath = path.join(folderPath, file);
 
+      // Procesa solo archivos PDF
       if (path.extname(file).toLowerCase() === '.pdf') {
         console.log(`Procesando archivo: ${file}`);
         const result = await processPDF(filePath);
@@ -20,6 +23,7 @@ export const processPDFsInFolder = async (folderPath: string) => {
       }
     }
   } catch (error) {
+    // Manejo de errores
     if (error instanceof Error) {
       console.error('Error al procesar la carpeta:', error.message);
     } else {
@@ -28,9 +32,9 @@ export const processPDFsInFolder = async (folderPath: string) => {
   }
 };
 
-// Ejecutar el script si se ejecuta directamente desde la línea de comandos
+// Código para ejecutar el script directamente desde la línea de comandos
 if (require.main === module) {
-  const folderPath = process.argv[2] || 'data/pdfs'; // Asegúrate de que el path por defecto sea el correcto
+  const folderPath = process.argv[2] || 'data/pdfs';
   processPDFsInFolder(folderPath)
     .then(() => {
       console.log('Todos los PDFs han sido procesados.');

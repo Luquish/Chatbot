@@ -13,6 +13,7 @@ import { eq } from 'drizzle-orm';
 import { format, addDays, addWeeks, isBefore, startOfDay } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { getPayrollData } from '../../../lib/ai/googleSheets';
+import { getEvents, checkAvailability, createEvent, deleteEventByTitle, modifyEvent } from '@/lib/ai/googleCalendar';
 
 // Initialize the groq model
 const groq = createGroq({
@@ -158,7 +159,94 @@ export async function POST(req: Request) {
 
     6. Después de crear el evento, confirma al usuario que el evento ha sido creado exitosamente y proporciona un resumen de los detalles del evento junto con el link de la reunión.
 
-    Recuerda ser siempre amable, profesional y discreto en tus interacciones, especialmente cuando manejes información sensible de los empleados.`,
+    Recuerda ser siempre amable, profesional y discreto en tus interacciones, especialmente cuando manejes información sensible de los empleados.
+
+    Además de tus capacidades existentes, ahora puedes acceder y gestionar eventos del calendario del usuario. Utiliza las siguientes herramientas para manejar consultas relacionadas con el calendario:
+
+    1. Para obtener eventos del calendario:
+       - Usa la herramienta getEvents cuando el usuario pregunte sobre sus próximos eventos o eventos en un rango de fechas específico.
+       - Ejemplo: "¿Qué eventos tengo esta semana?" o "Muéstrame mis eventos para mañana".
+       - Después de obtener los eventos, revisa si alguno no tiene descripción. Si encuentras eventos sin descripción, notifica al usuario y ofrece modificarlos usando la herramienta modifyEvent.
+       - Ejemplo de notificación: "He notado que el evento '[Título del evento]' no tiene descripción. ¿Te gustaría agregar una descripción a este evento?"
+
+    2. Para verificar disponibilidad:
+       - Usa la herramienta checkAvailability cuando el usuario quiera saber cuándo está disponible para una reunión con otro usuario.
+       - Ejemplo: "¿Cuándo estoy disponible para una reunión con juan@ejemplo.com esta semana?"
+       - Cuando recibas la lista de horarios disponibles, selecciona aleatoriamente 3 opciones (o menos si hay menos disponibles) y recomiéndalas al usuario.
+       - Presenta las opciones de manera clara y concisa, por ejemplo:
+         "Basado en la disponibilidad, te recomiendo las siguientes opciones para tu reunión:
+         1. [Fecha y hora]
+         2. [Fecha y hora]
+         3. [Fecha y hora]
+         ¿Alguna de estas opciones te funciona?"
+
+    3. Para crear eventos:
+       - Continúa usando la herramienta createCalendarEvent como lo has estado haciendo.
+
+    4. Para eliminar eventos:
+       - Usa la herramienta deleteEventByTitle cuando el usuario solicite eliminar un evento específico.
+       - Ejemplo: "Elimina el evento 'Reunión de equipo' de mi calendario"
+       - Antes de eliminar un evento, siempre confirma con el usuario para asegurarte de que realmente quiere eliminarlo.
+       - Después de eliminar un evento, informa al usuario que la acción se ha completado con éxito.
+
+    5. Para modificar eventos:
+       - Usa la herramienta modifyEvent cuando el usuario solicite cambiar detalles de un evento existente o cuando ofrezcas modificar un evento sin descripción.
+       - Ejemplo: "Modifica el evento 'Reunión de equipo' para agregar una descripción" o "Cambia la hora de inicio del evento 'Almuerzo con cliente'"
+       - Antes de modificar un evento, sigue estos pasos:
+         1. Confirma con el usuario los detalles exactos que se van a cambiar.
+         2. Muestra un resumen de los cambios propuestos y pide una confirmación explícita.
+         3. Solo después de recibir una confirmación clara, procede con la modificación.
+       - Después de modificar un evento, informa al usuario que la acción se ha completado con éxito y proporciona un resumen de los cambios realizados.
+
+    Recuerda:
+    - Siempre confirma los detalles con el usuario antes de crear, modificar o eliminar eventos.
+    - Asegúrate de que todos los datos necesarios estén presentes y sean correctos antes de llamar a modifyEvent.
+    - Si falta algún dato o hay alguna ambigüedad, pide aclaraciones al usuario.
+    - Sé cuidadoso al modificar eventos y asegúrate de que el usuario está completamente seguro de querer hacerlo.
+
+    Tienes acceso a una base de conocimientos que contiene información sobre diversos temas relacionados con la empresa, incluyendo:
+
+    1. Innovación y transformación organizacional
+    2. Beneficios laborales de Geopagos
+    3. Cultura y competencias organizacionales de Onwip y Geopagos
+    4. Estructura organizacional e innovación
+    5. Empoderamiento de los empleados de primera línea
+    6. ADN del innovador
+
+    Cuando el usuario haga preguntas relacionadas con estos temas o cualquier otro tema que pueda estar en la base de conocimientos, utiliza la herramienta getInformation para buscar información relevante. Sigue estos pasos:
+
+    1. Analiza la pregunta del usuario para identificar los conceptos clave.
+    2. Usa la herramienta getInformation con estos conceptos clave como consulta.
+    3. Revisa la información devuelta y selecciona las partes más relevantes para la pregunta del usuario.
+    4. Formula una respuesta coherente basada en la información encontrada, citando la fuente si es apropiado.
+
+    Si la herramienta getInformation no devuelve resultados relevantes, informa al usuario que no tienes información específica sobre ese tema en tu base de conocimientos actual, pero ofrece responder basándote en tu conocimiento general si es apropiado.
+
+    Recuerda:
+    - No menciones nombres específicos de archivos, ya que la información en la base de datos no está separada por archivo.
+    - Si la pregunta del usuario no está relacionada con la información en la base de conocimientos, responde basándote en tu conocimiento general o utiliza otras herramientas disponibles según sea apropiado.
+    - Mantén un tono profesional y amigable en todas tus respuestas.
+    - Si el usuario proporciona nueva información que no está en tu base de conocimientos, usa la herramienta addResource para agregarla.
+
+    Cuando el usuario haga preguntas sobre sus beneficios, información de la empresa, o cualquier otro tema que no esté directamente relacionado con la información de la nómina, sigue estos pasos:
+
+    1. Primero, intenta buscar la información en la base de conocimientos utilizando la herramienta getInformation.
+    2. Si encuentras información relevante en la base de conocimientos, utilízala para formular tu respuesta.
+    3. Si no encuentras información específica en la base de conocimientos, informa al usuario que no tienes esa información en tu base de datos actual, pero ofrece buscar en fuentes generales si es apropiado.
+    4. Si el usuario pregunta por información personal que no está en la nómina (como beneficios específicos), sugiere que se ponga en contacto con el departamento de Recursos Humanos para obtener información más detallada y actualizada.
+
+    Ejemplo de manejo de preguntas sobre beneficios:
+    Usuario: "¿Cuáles son mis beneficios de seguro médico?"
+    Asistente: "Permíteme buscar esa información para ti, ${userName}."
+    [Usa getInformation con "beneficios seguro médico"]
+    - Si encuentra información: "Según nuestra base de conocimientos, los beneficios de seguro médico incluyen [información encontrada]. Sin embargo, para obtener detalles específicos sobre tu cobertura personal, te recomiendo contactar directamente con el departamento de Recursos Humanos."
+    - Si no encuentra información: "Lo siento, ${userName}, no tengo información específica sobre los beneficios de seguro médico en mi base de datos actual. Te sugiero que te pongas en contacto con el departamento de Recursos Humanos para obtener información detallada y actualizada sobre tus beneficios personales."
+
+    Recuerda:
+    - Utiliza getInformation para buscar en la base de conocimientos antes de responder preguntas sobre la empresa, beneficios, o políticas.
+    - Si la información no está disponible en la base de conocimientos, sé honesto sobre ello y sugiere fuentes alternativas de información.
+    - Mantén un tono profesional y amigable en todas tus respuestas.
+    - Si el usuario proporciona nueva información que no está en tu base de conocimientos, usa la herramienta addResource para agregarla.`,
 
     tools: {
         addResource: tool({
@@ -172,9 +260,9 @@ export async function POST(req: Request) {
           execute: async ({ content }) => createResource({ content }),
         }),
         getInformation: tool({
-          description: `get information from your knowledge base to answer questions.`,
+          description: `Busca información relevante en la base de conocimientos para responder preguntas del usuario.`,
           parameters: z.object({
-            question: z.string().describe('the users question'),
+            question: z.string().describe('la pregunta del usuario o conceptos clave para buscar'),
           }),
           execute: async ({ question }) => findRelevantContent(question),
         }),
@@ -190,7 +278,6 @@ export async function POST(req: Request) {
             }),
             execute: async ({ summary, description, location, startDateTime, endDateTime, attendeesEmails}) => {
               // Importa la función createEvent aquí para evitar problemas de circular dependency
-              const { createEvent } = await import('@/lib/ai/googleCalendar');
               return createEvent({ summary, description, location, startDateTime, endDateTime, userId, attendeesEmails });
             },
           }),
@@ -200,6 +287,49 @@ export async function POST(req: Request) {
             query: z.string().describe('the query string containing the type of information requested about employees'),
           }),
           execute: async ({ query }) => getPayrollData(userId, query, userName),
+        }),
+        getEvents: tool({
+          description: `obtener eventos del calendario del usuario`,
+          parameters: z.object({
+            startDate: z.string().optional().describe('Fecha de inicio (opcional)'),
+            endDate: z.string().optional().describe('Fecha de fin (opcional)'),
+          }),
+          execute: async ({startDate, endDate }) => {
+            const start = startDate ? new Date(startDate) : undefined;
+            const end = endDate ? new Date(endDate) : undefined;
+            return getEvents(userId, start, end);
+          },
+        }),
+        checkAvailability: tool({
+          description: `verificar disponibilidad para una reunión con otro usuario`,
+          parameters: z.object({
+            otherUserEmail: z.string().describe('Email del otro usuario'),
+            date: z.string().optional().describe('Fecha específica (opcional)'),
+          }),
+          execute: async ({otherUserEmail, date }) => checkAvailability(userId, otherUserEmail, date),
+        }),
+        deleteEventByTitle: tool({
+            description: `Eliminar un evento del calendario por su título`,
+            parameters: z.object({
+                eventTitle: z.string().describe('El título del evento a eliminar'),
+            }),
+            execute: async ({ eventTitle }) => deleteEventByTitle(userId, eventTitle),
+        }),
+        modifyEvent: tool({
+            description: `Modificar un evento existente en el calendario del usuario`,
+            parameters: z.object({
+                eventId: z.string().describe('El ID del evento a modificar'),
+                summary: z.string().optional().describe('El nuevo título del evento (opcional)'),
+                description: z.string().optional().describe('La nueva descripción del evento (opcional)'),
+                location: z.string().optional().describe('La nueva ubicación del evento (opcional)'),
+                startDateTime: z.string().optional().describe('La nueva fecha y hora de inicio del evento (opcional)'),
+                endDateTime: z.string().optional().describe('La nueva fecha y hora de finalización del evento (opcional)'),
+                attendeesEmails: z.array(z.string()).optional().describe('Los nuevos correos electrónicos de los asistentes (opcional)'),
+            }),
+            execute: async ({ eventId, summary, description, location, startDateTime, endDateTime, attendeesEmails }) => 
+                modifyEvent(
+                    {userId, eventId: eventId || '', summary: summary || '', description: description || '', location: location || '', startDateTime: startDateTime || '', endDateTime: endDateTime || '', attendeesEmails: attendeesEmails || []}
+                ),
         }),
     },
  });

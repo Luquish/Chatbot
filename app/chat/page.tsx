@@ -2,7 +2,7 @@
 
 'use client';
 
-import { useChat, Message as ChatMessage } from 'ai/react'; // Asegúrate de importar Message correctamente
+import { useChat, Message as ChatMessage } from 'ai/react';
 import { useEffect, useRef, useState } from 'react';
 import FeedbackButton from '@/app/chat/components/FeedbackButtons';
 import { useRouter } from 'next/navigation';
@@ -10,7 +10,9 @@ import { useSession, SessionProvider, signOut } from 'next-auth/react';
 import ProactiveMessages from '@/app/chat/components/ProactiveMessages';
 import TextareaAutosize from 'react-textarea-autosize';
 import { Button } from "@/components/ui/button"
+import { Send, Loader2 } from 'lucide-react'; // Importa los iconos
 
+// Componente principal de la página de chat
 function ChatComponent() {
     const { data: session, status } = useSession();
     const router = useRouter();
@@ -28,11 +30,12 @@ function ChatComponent() {
     const [showFeedback, setShowFeedback] = useState<boolean>(false);
     const [currentFeedbackMessage, setCurrentFeedbackMessage] = useState<{ prompt: string; response: string } | null>(null);
 
-    useEffect(() => {
-      if (status === 'unauthenticated') {
-        router.push('/auth/signin');
-      }
-    }, [status, router]);
+  // Efecto para redirigir si no hay sesión
+  useEffect(() => {
+    if (status === 'unauthenticated') {
+      router.push('/auth/signin');
+    }
+  }, [status, router]);
 
     useEffect(() => {
       if (messagesEndRef.current) {
@@ -80,7 +83,7 @@ function ChatComponent() {
       // Después de añadir el mensaje, puedes llamar a handleSubmit si es necesario
       handleSubmit({ preventDefault: () => {} } as React.FormEvent<HTMLFormElement>);
     };
-
+    // Manejador para mensajes proactivos
     const handleProactiveMessage = (message: string) => {
         console.log('Triggering proactive message:', message);
         addHiddenUserMessage(message);
@@ -90,7 +93,7 @@ function ChatComponent() {
     const sendMessage = () => {
       if (!isBotResponding && input.trim() !== '') {
         setIsBotResponding(true);
-        handleSubmit(); // Asumiendo que handleSubmit puede ser llamado sin argumentos
+        handleSubmit();
       }
     };
 
@@ -101,12 +104,13 @@ function ChatComponent() {
         sendMessage();
       }
     };
-
+    // Función para cerrar sesión
     const handleSignOut = async () => {
         await signOut({ redirect: false });
         router.push('/');
     };
 
+  // Renderizado del componente
   return (
     <div className="flex flex-col items-center justify-center w-full h-screen" style={{ backgroundColor: '#1E1E1E' }}>
       {/* Botón de cierre de sesión */}
@@ -194,21 +198,36 @@ function ChatComponent() {
 
         {/* Barra de entrada de mensajes */}
         <form onSubmit={(e) => { e.preventDefault(); sendMessage(); }} className="p-4 relative w-full">
-          <TextareaAutosize
-            className={`w-full p-3 bg-gray-800 text-white rounded-lg shadow-lg focus:outline-none focus:ring-2 focus:ring-opacity-50 focus:ring-offset-2 transition-all duration-300 ease-in-out resize-none overflow-y-auto ${
-              isBotResponding ? 'opacity-50 cursor-not-allowed' : ''
-            }`}
-            value={input}
-            placeholder="Type your message here..."
-            onChange={handleInputChange}
-            onKeyDown={handleKeyDown}
-            disabled={isBotResponding}
-            minRows={1} // Número mínimo de filas
-            maxRows={5} // Número máximo de filas (opcional)
-            style={{
+          <div className="relative">
+            <TextareaAutosize
+              className={`w-full p-3 pr-12 bg-gray-800 text-white rounded-lg shadow-lg focus:outline-none focus:ring-2 focus:ring-opacity-50 focus:ring-offset-2 transition-all duration-300 ease-in-out resize-none overflow-y-auto`}
+              value={input}
+              placeholder="Type your message here..."
+              onChange={handleInputChange}
+              onKeyDown={handleKeyDown}
+              // Removido el atributo 'disabled'
+              minRows={1}
+              maxRows={5}
+              style={{
                 height: undefined,
-            }}
-          />
+              }}
+            />
+            <button
+              type="submit"
+              disabled={isBotResponding || input.trim() === ''}
+              className={`absolute right-2 bottom-3 p-2 rounded-full transition-colors duration-200 ${
+                isBotResponding || input.trim() === ''
+                  ? 'text-gray-400 cursor-not-allowed'
+                  : 'text-green-500 hover:text-green-600'
+              }`}
+            >
+              {isBotResponding ? (
+                <Loader2 className="w-5 h-5 animate-spin" />
+              ) : (
+                <Send className="w-5 h-5" />
+              )}
+            </button>
+          </div>
         </form>
       </div>
     </div>
