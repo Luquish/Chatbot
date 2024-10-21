@@ -91,10 +91,13 @@ const convertPdfToImages = async (fileBuffer: Buffer): Promise<Buffer[]> => {
   fs.mkdirSync(imagesDir);
 
   await new Promise<void>((resolve, reject) => {
-    exec(`pdftoppm -png "${tempFilePath}" "${imagesDir}/page"`, (error: any) => {
+    exec(`pdftoppm -png "${tempFilePath}" "${imagesDir}/page"`, (error: any, stdout: string, stderr: string) => {
       if (error) {
         reject(error);
       } else {
+        if (stderr) {
+          console.warn('Advertencias durante la conversión de PDF a imágenes:', stderr);
+        }
         resolve();
       }
     });

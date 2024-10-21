@@ -1,0 +1,1 @@
+ALTER TABLE "chatHistory" ADD COLUMN "sintax" text NOT NULL;

@@ -50,143 +50,106 @@ export async function getPayrollData(userId: string, query: string, userName: st
         const headers = data[0];
         const employees = data.slice(1);
 
-        function processQuery(query: string): string {
+        function processQuery(query: string, userName: string): string {
             query = query.toLowerCase();
+            console.log("Query recibida:", query);
 
-            // Function to normalize strings for comparison
             const normalize = (str: string) => str.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-
-            // Function to capitalize first letter of each word
             const capitalize = (str: string) => str.replace(/\b\w/g, l => l.toUpperCase());
 
-            // Function to find employees by name
-            const findEmployees = (name: string) => {
-                const normalizedName = normalize(name);
-                const nameParts = normalizedName.split(' ');
-                
-                const exactMatches = employees.filter(row => {
-                    const firstName = normalize(row[4]);
-                    const lastName = normalize(row[3]);
-                    const fullName = `${firstName} ${lastName}`;
-                    return fullName === normalizedName || 
-                           firstName === normalizedName || 
-                           lastName === normalizedName;
-                });
+            // Función para encontrar empleados por criterios
+            const findEmployeesByCriteria = (criteria: (row: any) => boolean) => {
+                return employees.filter(criteria);
+            };
 
-                if (exactMatches.length > 0) {
-                    return exactMatches;
+            // Función para obtener información del usuario actual
+            const getCurrentUserInfo = () => {
+                const currentUser = findEmployeesByCriteria(row => 
+                    normalize(`${row[4]} ${row[3]}`) === normalize(userName)
+                )[0];
+
+                if (!currentUser) {
+                    return "No se encontraron datos para el usuario actual en la nómina.";
                 }
 
-                // Si no hay coincidencias exactas, buscamos coincidencias parciales más estrictas
-                const partialMatches = employees.filter(row => {
-                    const firstName = normalize(row[4]);
-                    const lastName = normalize(row[3]);
-                    
-                    // Verificamos que cada parte del nombre buscado coincida exactamente con el inicio de un nombre o apellido
-                    return nameParts.every(part => 
-                        firstName.startsWith(part) || lastName.startsWith(part)
-                    );
-                });
-
-                return partialMatches;
+                return currentUser;
             };
 
-            // Helper function to handle multiple matches
-            const handleMultipleMatches = (matches: any[], name: string) => {
-                if (matches.length > 1) {
-                    const employeeList = matches.map((emp, index) => 
-                        `${index + 1}. ${capitalize(emp[4])} ${capitalize(emp[3])} - ${emp[10]}`
-                    ).join('\n');
-                    return `Encontré múltiples empleados que coinciden con "${name}". Por favor, especifica a cuál te refieres:\n${employeeList}`;
+            // Manejar consultas sobre información personal del usuario actual
+            if (query.includes("mi") || query.includes("yo") || query.includes("estoy")) {
+                const currentUser = getCurrentUserInfo();
+                if (typeof currentUser === "string") return currentUser;
+
+                if (query.includes("area de trabajo") || query.includes("área de trabajo")) {
+                    return `Tu área de trabajo es: ${currentUser[8]}`;
+                } else if (query.includes("tipo de empleo")) {
+                    return `Tu tipo de empleo es: ${currentUser[11]}`;
+                } else if (query.includes("division") || query.includes("división")) {
+                    return `Estás en la división: ${currentUser[7]}`;
                 }
-                return null;
-            };
-
-            // New function to find the current user
-            const findCurrentUser = (userName: string) => {
-                const normalizedUserName = normalize(userName);
-                const userNameParts = normalizedUserName.split(' ');
-                
-                return employees.find(row => {
-                    const firstName = normalize(row[4]);
-                    const lastName = normalize(row[3]);
-                    const fullName = `${firstName} ${lastName}`;
-                    
-                    // Check if the full name matches exactly
-                    if (fullName === normalizedUserName) {
-                        return true;
-                    }
-                    
-                    // If not an exact match, check if all parts of the userName are present in the full name
-                    if (userNameParts.length > 1) {
-                        return userNameParts.every(part => fullName.includes(part));
-                    }
-                    
-                    // If only one part is provided, it must match either the first name or last name exactly
-                    return firstName === normalizedUserName || lastName === normalizedUserName;
-                });
-            };
-
-            // Get current user's data
-            const currentUser = findCurrentUser(userName) || Array(headers.length).fill('');
-            const getCurrentUserData = () => {
-                if (currentUser.some(field => field !== '')) {
-                    return `Información del usuario actual (${capitalize(currentUser[4])} ${capitalize(currentUser[3])}):\n` +
-                           headers.map((header, index) => `${header}: ${currentUser[index] || 'No disponible'}`).join("\n");
-                } else {
-                    return `No se encontraron datos exactos para el usuario "${userName}" en la nómina. Por favor, verifica que el nombre esté escrito correctamente o contacta a RRHH si crees que esto es un error.`;
-                }
-            };
-
-            // Handler for current user data queries
-            if (query.includes("mis datos") || query.includes("mi información")) {
-                return getCurrentUserData();
             }
 
-            // Handler for "toda la información" queries
-            if (query.includes("todo sobre") || query.includes("toda la información") || query.includes("todos los datos")) {
-                const name = query.split(/sobre|de/).pop()?.trim() || "";
-                let matches = findEmployees(name);
-                
-                const multipleMatchesResponse = handleMultipleMatches(matches, name);
-                if (multipleMatchesResponse) return multipleMatchesResponse;
+            // Manejar consultas sobre el equipo de trabajo del usuario
+            if (query.includes("quienes trabajan en mi area") || query.includes("quiénes trabajan en mi área")) {
+                const currentUser = getCurrentUserInfo();
+                if (typeof currentUser === "string") return currentUser;
 
-                if (matches.length === 0) {
-                    return `No se encontró ningún empleado con el nombre ${name}.`;
-                }
-
-                const employee = matches[0];
-                return headers.map((header, index) => `${header}: ${employee[index] || 'No disponible'}`).join("\n");
+                const teamMembers = findEmployeesByCriteria(row => row[8] === currentUser[8]);
+                return `Los miembros de tu área (${currentUser[8]}) son:\n${teamMembers.map(member => `- ${capitalize(member[4])} ${capitalize(member[3])} (${member[10]})`).join('\n')}`;
             }
 
-            // Handler for general name queries
-            if (query.includes("que sabes de") || query.startsWith("sobre")) {
-                const name = query.split(/que sabes de|sobre/).pop()?.trim() || "";
-                let matches = findEmployees(name);
-                
-                if (matches.length === 0) {
-                    return `No se encontró ningún empleado con el nombre "${name}". ¿Quieres que busque nombres similares?`;
-                }
+            if (query.includes("quienes estan en la misma division") || query.includes("quiénes están en la misma división")) {
+                const currentUser = getCurrentUserInfo();
+                if (typeof currentUser === "string") return currentUser;
 
-                const multipleMatchesResponse = handleMultipleMatches(matches, name);
-                if (multipleMatchesResponse) return multipleMatchesResponse;
-
-                const employee = matches[0];
-                return headers.map((header, index) => `${header}: ${employee[index] || 'No disponible'}`).join("\n");
+                const divisionMembers = findEmployeesByCriteria(row => row[7] === currentUser[7]);
+                return `Los miembros de tu división (${currentUser[7]}) son:\n${divisionMembers.map(member => `- ${capitalize(member[4])} ${capitalize(member[3])} (${member[10]})`).join('\n')}`;
             }
 
-            // Si no se ha encontrado un tipo de consulta específico, realizar una búsqueda general
-            const matches = findEmployees(query);
+            // Manejar consultas sobre áreas específicas
+            if (query.includes("quienes trabajan en el area") || query.includes("quiénes trabajan en el área")) {
+                const area = query.split("area")[1].trim();
+                const areaMembers = findEmployeesByCriteria(row => normalize(row[8]) === normalize(area));
+                return `Los miembros del área "${area}" son:\n${areaMembers.map(member => `- ${capitalize(member[4])} ${capitalize(member[3])} (${member[10]})`).join('\n')}`;
+            }
+
+            if (query.includes("cargo de los integrantes de la division") || query.includes("cargo de los integrantes de la división")) {
+                const division = query.split("division")[1].trim();
+                const divisionMembers = findEmployeesByCriteria(row => normalize(row[7]) === normalize(division));
+                return `Los cargos de los integrantes de la división "${division}" son:\n${divisionMembers.map(member => `- ${capitalize(member[4])} ${capitalize(member[3])}: ${member[10]}`).join('\n')}`;
+            }
+
+            // Manejar consultas sobre datos de terceros
+            if (query.includes("cumpleaños de")) {
+                const name = query.split("cumpleaños de")[1].trim();
+                const employee = findEmployeesByCriteria(row => normalize(`${row[4]} ${row[3]}`) === normalize(name))[0];
+                return employee ? `El cumpleaños de ${capitalize(name)} es el ${employee[5]}` : `No se encontró información para ${name}`;
+            }
+
+            if (query.includes("cargo ocupa")) {
+                const name = query.split("cargo ocupa")[1].trim();
+                const employee = findEmployeesByCriteria(row => normalize(`${row[4]} ${row[3]}`) === normalize(name))[0];
+                return employee ? `${capitalize(name)} ocupa el cargo de ${employee[10]}` : `No se encontró información para ${name}`;
+            }
+
+            // Si no se encuentra una consulta específica, realizar una búsqueda general
+            const matches = findEmployeesByCriteria(row => 
+                normalize(`${row[4]} ${row[3]}`).includes(normalize(query)) ||
+                normalize(row[10]).includes(normalize(query)) ||
+                normalize(row[8]).includes(normalize(query)) ||
+                normalize(row[7]).includes(normalize(query))
+            );
+
             if (matches.length > 0) {
-                return `Encontré ${matches.length} empleado(s) que coinciden con tu búsqueda:\n${matches.map(row => 
-                    `${capitalize(row[4])} ${capitalize(row[3])}: ${row[10]}`
+                return `Encontré ${matches.length} resultado(s) que coinciden con tu búsqueda:\n${matches.map(row => 
+                    `${capitalize(row[4])} ${capitalize(row[3])}: ${row[10]} - ${row[8]} (${row[7]})`
                 ).join("\n")}`;
             } else {
-                return "No se encontraron resultados para tu búsqueda.";
+                return "No se encontraron resultados para tu búsqueda. Por favor, intenta con términos más generales o verifica la ortografía.";
             }
         }
 
-        return processQuery(query);
+        return processQuery(query, userName);
 
     } catch (error) {
         if (error instanceof Error) {

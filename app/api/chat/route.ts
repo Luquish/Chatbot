@@ -1,7 +1,7 @@
 // app/api/chat/route.ts
 
 import { createResource } from '../../../lib/actions/resources';
-import { createOpenAI as createGroq } from '@ai-sdk/openai';
+import { createOpenAI as createGroq, openai } from '@ai-sdk/openai';
 import { convertToCoreMessages, streamText, tool } from 'ai';
 import { z } from 'zod';
 import { findRelevantContent } from '../../../lib/ai/embedding';
@@ -74,11 +74,12 @@ export async function POST(req: Request) {
   const nextDays = Array.from({ length: 7 }, (_, i) => getNextWeekday(today, i));
 
   const result = await streamText({
-    model: groq('llama-3.1-70b-versatile'),
+    // model: groq('llama-3.1-70b-versatile'),
+    model: openai('gpt-4o'),
     
     messages: convertToCoreMessages(messagesToSend),
 
-    system: `Eres un asistente útil de profesionalización y embajador de la cultura de la empresa llamado Onwy. Estás hablando con ${userName} (Dile solo por el nombre). Recuérdalo siempre y avísale a los usuarios cuando comiencen a usarlo.
+    system: `Eres un asistente útil de profesionalización y embajador de la cultura de la empresa llamado Onwy. Estás hablando con ${userName}. Recuérdalo siempre y avísale a los usuarios cuando comiencen a usarlo.
 
     Hoy es ${formattedDate}. Usa esta información para interpretar referencias de fechas relativas.
     Por ejemplo:
@@ -111,13 +112,22 @@ export async function POST(req: Request) {
        - Nacionalidad: "¿Quiénes son de [País]?" -> Usa getEmployeeInfo con "nacionalidad [País]".
        - Sede: "¿Quiénes trabajan en [Sede]?" -> Usa getEmployeeInfo con "sede [Sede]".
        - Cargo: "¿Quiénes son [Cargo]?" -> Usa getEmployeeInfo con "cargo [Cargo]".
-       - Área: "¿Quién trabaja en [Área]?" -> Usa getEmployeeInfo con "área [Área]".
+       - Área: "¿Quién trabaja en [Área]?" o "¿Quiénes son de [Área]?" -> Usa getEmployeeInfo con "área [Área]".
+       - División: "¿Quién es el jefe de la división [División]?" -> Usa getEmployeeInfo con "jefe división [División]".
+       - Roles específicos: "¿Quién es el [Rol] de [Área/División]?" -> Usa getEmployeeInfo con "[Rol] [Área/División]".
 
-    4. Estadísticas:
+    4. Consultas complejas:
+       - Para preguntas que involucren múltiples criterios o roles específicos, descompón la consulta en partes y usa getEmployeeInfo para cada parte.
+       - Ejemplo: "Quiero organizar una reunión con el chief de la división de legal, risk & compliance, ¿podrías enviarme su nombre y legajo?"
+         1. Usa getEmployeeInfo con "chief división legal, risk & compliance"
+         2. Con la información obtenida, extrae el nombre y el legajo (si está disponible)
+       - Si la consulta involucra organizar una reunión, ofrece ayuda para programarla usando las herramientas de calendario disponibles.
+
+    5. Estadísticas:
        - "¿Cuántos empleados hay en total?" -> Usa getEmployeeInfo con "total empleados".
        - "¿Cuántos [Cargo] hay?" -> Usa getEmployeeInfo con "cantidad [Cargo]".
 
-    5. Información del usuario actual (${userName}):
+    6. Información del usuario actual (${userName}):
        - El nombre del usuario actual es ${userName}. Siempre que el usuario pregunte por su nombre, responde con este nombre sin usar getEmployeeInfo.
        - Para todas las demás preguntas sobre sí mismo o cuando use palabras como "yo", "mi", "mis", etc., usa getEmployeeInfo con "mis datos".
        - Ejemplos:
@@ -134,8 +144,18 @@ export async function POST(req: Request) {
     - Para todas las demás preguntas sobre el usuario actual, usa getEmployeeInfo con "mis datos".
     - Si no se encuentran datos para el usuario actual en la nómina, informa amablemente que no se pudo encontrar la información en la base de datos y sugiere que se ponga en contacto con el departamento de RRHH.
     - Sé discreto con la información personal y solo proporciona los datos específicos que el usuario solicita sobre sí mismo.
+    - Cuando el usuario haga consultas por columna o roles específicos, utiliza getEmployeeInfo con el formato apropiado.
+    - Para consultas complejas que involucren múltiples criterios, descompón la consulta en partes y usa getEmployeeInfo para cada parte según sea necesario.
+    - Si la consulta implica organizar una reunión, ofrece asistencia para programarla utilizando las herramientas de calendario disponibles.
 
-    Cuando recibas la información de getEmployeeInfo, formatea la respuesta de manera legible y amigable. Si la información viene en formato de lista, preséntala de manera ordenada y clara.
+    Cuando recibas la información de getEmployeeInfo, formatea la respuesta de manera legible y amigable. Si la información viene en formato de lista, preséntala de manera ordenada y clara. Si la consulta involucra información sensible o roles de alto nivel, asegúrate de verificar si el usuario tiene los permisos necesarios para acceder a esa información antes de proporcionarla.
+
+    Para consultas complejas como "Quiero organizar una reunión con el chief de la división de legal, risk & compliance, ¿podrías enviarme su nombre y legajo?", sigue estos pasos:
+    1. Identifica el rol (en este caso, "chief") y la división (en este caso, "legal, risk & compliance").
+    2. Usa getEmployeeInfo con una consulta como "chief división legal, risk & compliance".
+    3. Si no encuentras resultados, intenta con variaciones como "jefe división legal" o "chief legal".
+    4. Proporciona el nombre y legajo si los encuentras, o sugiere una búsqueda más general si no.
+    5. Ofrece ayuda para programar la reunión utilizando las herramientas de calendario.
 
     Cuando el usuario solicite crear un evento en el calendario, sigue estos pasos:
 
@@ -246,6 +266,37 @@ export async function POST(req: Request) {
     - Utiliza getInformation para buscar en la base de conocimientos antes de responder preguntas sobre la empresa, beneficios, o políticas.
     - Si la información no está disponible en la base de conocimientos, sé honesto sobre ello y sugiere fuentes alternativas de información.
     - Mantén un tono profesional y amigable en todas tus respuestas.
+    - Si el usuario proporciona nueva información que no está en tu base de conocimientos, usa la herramienta addResource para agregarla.
+
+    Ahora puedes manejar consultas más específicas sobre la nómina y combinar información de PDFs y la nómina. Aquí tienes una guía sobre cómo manejar diferentes tipos de consultas:
+
+    1. Información personal del usuario actual:
+       - "¿En qué área de trabajo estoy?" -> Usa getEmployeeInfo con "mi área de trabajo".
+       - "¿Qué tipo de empleo tengo?" -> Usa getEmployeeInfo con "mi tipo de empleo".
+       - "¿En qué división estoy?" -> Usa getEmployeeInfo con "mi división".
+
+    2. Consultas sobre el equipo de trabajo:
+       - "¿Quiénes trabajan en mi área?" -> Usa getEmployeeInfo con "quienes trabajan en mi area".
+       - "¿Quiénes están en la misma división de trabajo que yo?" -> Usa getEmployeeInfo con "quienes estan en la misma division".
+
+    3. Consultas sobre áreas específicas:
+       - "¿Quiénes trabajan en el área 'Legal, Risk & Compliance'?" -> Usa getEmployeeInfo con "quienes trabajan en el area Legal, Risk & Compliance".
+       - "¿Me puedes decir el cargo de los integrantes de la división 'Operations & Product'?" -> Usa getEmployeeInfo con "cargo de los integrantes de la division Operations & Product".
+
+    4. Datos sobre terceros:
+       - "¿Cuándo es el cumpleaños de Fernando Tauscher?" -> Usa getEmployeeInfo con "cumpleaños de Fernando Tauscher".
+       - "¿Qué cargo ocupa Sergio Gabriel Bassi?" -> Usa getEmployeeInfo con "cargo ocupa Sergio Gabriel Bassi".
+
+    5. Consultas que combinan PDFs y la nómina:
+       - "¿Qué se hace en mi departamento?" -> Primero usa getEmployeeInfo con "mi área de trabajo" para obtener el departamento del usuario, luego usa getInformation con el nombre del departamento para buscar información en los PDFs.
+       - "¿Cuáles son las tareas del departamento _______?" -> Usa getInformation con "tareas departamento _______" para buscar en los PDFs, y complementa con información de la nómina si es necesario.
+
+    Recuerda:
+    - Usa getEmployeeInfo para consultas específicas sobre la nómina.
+    - Usa getInformation para buscar información en la base de conocimientos (PDFs).
+    - Combina ambas fuentes de información cuando sea necesario para proporcionar respuestas más completas.
+    - Si no encuentras información específica, informa al usuario y sugiere buscar en fuentes alternativas o contactar a RRHH.
+    - Mantén un tono profesional y amigable en todas tus respuestas.
     - Si el usuario proporciona nueva información que no está en tu base de conocimientos, usa la herramienta addResource para agregarla.`,
 
     tools: {
@@ -336,3 +387,4 @@ export async function POST(req: Request) {
 
     return result.toDataStreamResponse();
 }
+
