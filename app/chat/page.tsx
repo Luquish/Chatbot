@@ -5,7 +5,7 @@
 import { useChat, Message as ChatMessage } from 'ai/react';
 import { useEffect, useRef, useState } from 'react';
 import FeedbackButton from '@/app/chat/components/FeedbackButtons';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useSession, SessionProvider, signOut } from 'next-auth/react';
 import ProactiveMessages from '@/app/chat/components/ProactiveMessages';
 import TextareaAutosize from 'react-textarea-autosize';
@@ -16,6 +16,8 @@ import { Send, Loader2 } from 'lucide-react'; // Importa los iconos
 function ChatComponent() {
     const { data: session, status } = useSession();
     const router = useRouter();
+    const searchParams = useSearchParams();
+    const isExtension = searchParams.get('extension') === 'true';
     const [isBotResponding, setIsBotResponding] = useState(false);
     const { messages, input, handleInputChange, handleSubmit, append } = useChat({
       maxToolRoundtrips: 2,
@@ -30,12 +32,12 @@ function ChatComponent() {
     const [showFeedback, setShowFeedback] = useState<boolean>(false);
     const [currentFeedbackMessage, setCurrentFeedbackMessage] = useState<{ prompt: string; response: string } | null>(null);
 
-  // Efecto para redirigir si no hay sesión
+  // Efecto para redirigir si no hay sesión (solo si no es la extensión)
   useEffect(() => {
-    if (status === 'unauthenticated') {
+    if (!isExtension && status === 'unauthenticated') {
       router.push('/auth/signin');
     }
-  }, [status, router]);
+  }, [status, router, isExtension]);
 
     useEffect(() => {
       if (messagesEndRef.current) {
@@ -111,21 +113,23 @@ function ChatComponent() {
 
   // Renderizado del componente
   return (
-    <div className="flex flex-col items-center justify-center w-full h-screen" style={{ backgroundColor: '#1E1E1E' }}>
-      {/* Botón de cierre de sesión */}
-      <div className="absolute top-4 right-4">
-        <Button 
-          onClick={handleSignOut} 
-          variant="outline" 
-          className="bg-white text-black border-white hover:bg-black hover:text-white transition-colors duration-300"
-        >
-          Cerrar Sesión
-        </Button>
-      </div>
+    <div className={`flex flex-col items-center justify-center w-full ${isExtension ? 'h-full' : 'h-screen'}`} style={{ backgroundColor: '#1E1E1E' }}>
+      {/* Botón de cierre de sesión (solo si no es la extensión) */}
+      {!isExtension && (
+        <div className="absolute top-4 right-4">
+          <Button 
+            onClick={handleSignOut} 
+            variant="outline" 
+            className="bg-white text-black border-white hover:bg-black hover:text-white transition-colors duration-300"
+          >
+            Cerrar Sesión
+          </Button>
+        </div>
+      )}
 
       <ProactiveMessages onSendProactiveMessage={handleProactiveMessage} />
       {/* Chat container */}
-      <div className="flex flex-col w-full max-w-3xl h-full">
+      <div className={`flex flex-col w-full ${isExtension ? 'max-w-full' : 'max-w-3xl'} h-full`}>
         {/* Mensajes */}
         <div className="flex-1 p-6 overflow-y-auto text-white" style={{ marginRight: '-17px', paddingRight: '17px' }}>
           <div className="space-y-4">

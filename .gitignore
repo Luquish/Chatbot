@@ -39,3 +39,6 @@ certificates
 
 # data
 /data/
+
+# cursor
+.cursorrules
