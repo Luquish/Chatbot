@@ -3,7 +3,7 @@ import { accounts } from '../db/schema/schemas';
 import { eq } from 'drizzle-orm';
 import { db } from '../db';
 import { DateTime } from 'luxon';
-import { format } from 'date-fns';
+import { format, startOfDay, isBefore } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { users } from '../db/schema/schemas';
 
@@ -126,8 +126,59 @@ export async function createEvent({
     console.log('Creating calendar instance');
     const calendar = google.calendar({ version: 'v3', auth: oauth2Client });
 
+    // Verificar horario laboral
     const parsedStart = parseDateTime(startDateTime);
     const parsedEnd = parseDateTime(endDateTime);
+    
+    const startHour = DateTime.fromISO(parsedStart.dateTime || '').hour;
+    const endHour = DateTime.fromISO(parsedEnd.dateTime || '').hour;
+    
+    if (startHour < 8 || startHour > 17 || endHour < 8 || endHour > 17) {
+      return { 
+        error: 'El horario de la reunión debe estar dentro del horario laboral (8 AM - 5 PM)' 
+      };
+    }
+
+    // Verificar disponibilidad de los asistentes
+    if (attendeesEmails && attendeesEmails.length > 0) {
+      for (const email of attendeesEmails) {
+        const userEvents = await getEvents(userId, new Date(parsedStart.dateTime!), new Date(parsedEnd.dateTime!));
+        const otherUser = await db.select().from(users).where(eq(users.email, email)).limit(1);
+        
+        if (!otherUser || otherUser.length === 0) {
+          return {
+            error: `No se encontró el usuario con email ${email} en el sistema.`
+          };
+        }
+
+        const otherUserEvents = await getEvents(otherUser[0].id, new Date(parsedStart.dateTime!), new Date(parsedEnd.dateTime!));
+        
+        // Check if either result is an error object
+        if ('error' in userEvents || 'error' in otherUserEvents) {
+          return { error: 'Error al obtener eventos del calendario' };
+        }
+
+        // Now we know both are arrays
+        const hasConflict = [...userEvents, ...otherUserEvents].some(event => {
+          const eventStart = new Date(event.startTime);
+          const eventEnd = new Date(event.endTime);
+          const proposedStart = new Date(parsedStart.dateTime!);
+          const proposedEnd = new Date(parsedEnd.dateTime!);
+          
+          return (
+            (proposedStart >= eventStart && proposedStart < eventEnd) ||
+            (proposedEnd > eventStart && proposedEnd <= eventEnd) ||
+            (proposedStart <= eventStart && proposedEnd >= eventEnd)
+          );
+        });
+
+        if (hasConflict) {
+          return {
+            error: `${email} tiene un conflicto de horario en el período seleccionado. Por favor, elige otro horario.`
+          };
+        }
+      }
+    }
 
     const event: any = {
       summary: summary,
@@ -185,12 +236,12 @@ export async function createEvent({
 }
 
 export async function getEvents(userId: string, startDate?: Date, endDate?: Date) {
-  console.log('Starting getEvents function');
-  console.log('User ID:', userId);
-  console.log('Start Date:', startDate);
-  console.log('End Date:', endDate);
-
   try {
+    console.log('Starting getEvents function');
+    console.log('User ID:', userId);
+    console.log('Start Date:', startDate);
+    console.log('End Date:', endDate);
+
     console.log('Fetching user account');
     const userAccount = await db.select().from(accounts).where(eq(accounts.userId, userId)).limit(1).execute();
     console.log('User account:', userAccount);
@@ -240,116 +291,240 @@ export async function getEvents(userId: string, startDate?: Date, endDate?: Date
     console.log('Events:', events);
 
     return events.map((event: any) => ({
+      id: event.id, // Agregar esta línea
       name: event.summary,
       eventLink: event.htmlLink,
       startTime: event.start.dateTime || event.start.date,
       endTime: event.end.dateTime || event.end.date,
       attendees: event.attendees?.map((attendee: any) => attendee.email) || [],
     }));
-  } catch (error) {
+  } catch (error: unknown) {
     console.error('Error in getEvents function:', error);
-    if (error instanceof Error) {
-      console.error('Error message:', error.message);
-      console.error('Error stack:', error.stack);
+    if (error instanceof Error && error.message?.includes('invalid_grant')) {
+      return { error: 'El token de acceso ha expirado. Por favor, vuelve a iniciar sesión.' };
     }
-    if (error instanceof Error && 'response' in error) {
-      const axiosError = error as any;
-      if (axiosError.response?.data?.error) {
-        console.error('Detailed API error:', axiosError.response.data.error);
-      }
-    }
-    return []; // Return an empty array instead of an error object
+    return { error: 'Error al obtener eventos del calendario' };
   }
 }
 
-export async function checkAvailability(userId: string, otherUserEmail: string, date?: string): Promise<string> {
-  try {
-    // Fetch user data from the database
-    const userAccount = await db.select().from(accounts).where(eq(accounts.userId, userId)).limit(1);
-    if (!userAccount || userAccount.length === 0) {
-      throw new Error('User account not found');
-    }
+function findAvailableSlots(startDate: Date, endDate: Date, busySlots: Array<{ start: Date; end: Date }>) {
+  const availableSlots: Array<{ start: Date; end: Date }> = [];
+  let currentDate = startOfDay(startDate);
 
-    // Fetch other user's data from the database
-    const otherUser = await db.select().from(users).where(eq(users.email, otherUserEmail)).limit(1);
-    if (!otherUser || otherUser.length === 0) {
-      throw new Error('Other user not found');
-    }
+  while (isBefore(currentDate, endDate)) {
+    // Solo considerar horario laboral (8 AM - 5 PM)
+    const workDayStart = new Date(currentDate);
+    workDayStart.setHours(8, 0, 0);
+    const workDayEnd = new Date(currentDate);
+    workDayEnd.setHours(17, 0, 0);
 
-    const oauth2Client = createOAuth2Client();
-    oauth2Client.setCredentials({
-      refresh_token: userAccount[0].refresh_token,
-    });
+    // Filtrar eventos del día actual
+    const dayEvents = busySlots.filter(slot => {
+      const slotDate = startOfDay(slot.start);
+      return slotDate.getTime() === currentDate.getTime();
+    }).sort((a, b) => a.start.getTime() - b.start.getTime());
 
-    const { credentials } = await oauth2Client.refreshAccessToken();
-    oauth2Client.setCredentials(credentials);
+    let slotStart = workDayStart;
 
-    const calendar = google.calendar({ version: 'v3', auth: oauth2Client });
-
-    // If no specific date is provided, check availability for the next 7 days
-    const startDate = date ? new Date(date) : new Date();
-    const endDate = date ? new Date(date) : new Date(startDate.getTime() + 7 * 24 * 60 * 60 * 1000);
-
-    const userEventsResult = await getEvents(userId, startDate, endDate);
-    const otherUserEventsResult = await getEvents(otherUser[0].id, startDate, endDate);
-
-    const userEvents = Array.isArray(userEventsResult) ? userEventsResult : [];
-    const otherUserEvents = Array.isArray(otherUserEventsResult) ? otherUserEventsResult : [];
-
-    const busySlots = [...userEvents, ...otherUserEvents].map(event => ({
-      start: new Date(event.startTime),
-      end: new Date(event.endTime)
-    }));
-
-    // Find available slots
-    const availableSlots = findAvailableSlots(startDate, endDate, busySlots);
-
-    if (availableSlots.length === 0) {
-      return "No hay horarios disponibles en el período solicitado.";
-    }
-
-    // Format the response
-    let response = date 
-      ? `Horarios disponibles para el ${format(startDate, "d 'de' MMMM", { locale: es })}:\n`
-      : "Horarios disponibles en los próximos 7 días:\n";
-
-    availableSlots.forEach(slot => {
-      response += `- ${format(slot.start, "d 'de' MMMM 'de' yyyy 'a las' HH:mm", { locale: es })} - ${format(slot.end, "HH:mm", { locale: es })}\n`;
-    });
-
-    return response;
-  } catch (error) {
-    console.error('Error in checkAvailability function:', error);
-    throw error;
-  }
-}
-
-function findAvailableSlots(startDate: Date, endDate: Date, busySlots: {start: Date, end: Date}[]): {start: Date, end: Date}[] {
-  const availableSlots = [];
-  let currentTime = new Date(startDate);
-
-  while (currentTime < endDate) {
-    const dayStart = new Date(currentTime.setHours(9, 0, 0, 0));
-    const dayEnd = new Date(currentTime.setHours(18, 0, 0, 0));
-
-    let slotStart = dayStart;
-    busySlots.forEach(busySlot => {
-      if (busySlot.start > slotStart && busySlot.start < dayEnd) {
-        if (busySlot.start.getTime() - slotStart.getTime() >= 30 * 60 * 1000) {
-          availableSlots.push({start: slotStart, end: busySlot.start});
+    if (dayEvents.length === 0) {
+      // Si no hay eventos, todo el día está disponible
+      availableSlots.push({ start: workDayStart, end: workDayEnd });
+    } else {
+      // Procesar cada evento y encontrar los espacios libres entre ellos
+      for (const event of dayEvents) {
+        if (event.start > slotStart && event.start <= workDayEnd) {
+          // Agregar slot disponible antes del evento si hay al menos 30 minutos
+          if (event.start.getTime() - slotStart.getTime() >= 30 * 60 * 1000) {
+            availableSlots.push({ start: slotStart, end: event.start });
+          }
         }
-        slotStart = busySlot.end;
+        slotStart = new Date(Math.max(event.end.getTime(), slotStart.getTime()));
       }
-    });
 
-    if (slotStart < dayEnd) {
-      availableSlots.push({start: slotStart, end: dayEnd});
+      // Agregar slot después del último evento si queda tiempo
+      if (slotStart < workDayEnd) {
+        availableSlots.push({ start: slotStart, end: workDayEnd });
+      }
     }
 
-    currentTime.setDate(currentTime.getDate() + 1);
+    currentDate.setDate(currentDate.getDate() + 1);
   }
 
   return availableSlots;
+}
+
+// Función para obtener slots disponibles para un día específico
+export async function getAvailableSlots(userId: string, date: string, otherUserEmail?: string): Promise<string[]> {
+  try {
+    // Validar formato de fecha
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+      return ['Error: La fecha debe estar en formato YYYY-MM-DD'];
+    }
+
+    const startDate = new Date(date);
+    if (isNaN(startDate.getTime())) {
+      return ['Error: Fecha inválida'];
+    }
+
+    startDate.setHours(8, 0, 0); // Comenzar a las 8 AM
+    const endDate = new Date(date);
+    endDate.setHours(17, 0, 0); // Terminar a las 5 PM
+
+    // Obtener el email del usuario actual
+    const currentUser = await db.select().from(users).where(eq(users.id, userId)).limit(1).execute();
+    if (!currentUser || currentUser.length === 0) {
+      return ['No se encontró la cuenta del usuario.'];
+    }
+
+    // Obtener eventos del usuario actual
+    const userEvents = await getEvents(userId, startDate, endDate);
+    if ('error' in userEvents) {
+      return ['Error al obtener eventos del calendario.'];
+    }
+
+    let busySlots = userEvents.map(event => ({
+      start: new Date(event.startTime),
+      end: new Date(event.endTime),
+    }));
+
+    // Si se proporciona el email de otro usuario, obtener también sus eventos
+    if (otherUserEmail) {
+      const otherUser = await db.select().from(users).where(eq(users.email, otherUserEmail)).limit(1).execute();
+      if (!otherUser || otherUser.length === 0) {
+        return [`No se encontró el usuario con email ${otherUserEmail} en el sistema.`];
+      }
+
+      const otherUserEvents = await getEvents(otherUser[0].id, startDate, endDate);
+      if ('error' in otherUserEvents) {
+        return ['Error al obtener eventos del calendario.'];
+      }
+
+      busySlots = [...busySlots, ...otherUserEvents.map(event => ({
+        start: new Date(event.startTime),
+        end: new Date(event.endTime),
+      }))];
+    }
+
+    // Encontrar slots disponibles
+    const availableSlots = findAvailableSlots(startDate, endDate, busySlots);
+    
+    if (availableSlots.length === 0) {
+      return ['No hay espacios disponibles en el día seleccionado.'];
+    }
+
+    // Seleccionar entre 3 y 5 slots distribuidos a lo largo del día
+    const selectedSlots = selectDistributedSlots(availableSlots);
+    
+    return selectedSlots.map(slot => 
+      `${slot.start.toLocaleTimeString()} - ${slot.end.toLocaleTimeString()}`
+    );
+  } catch (error) {
+    console.error('Error getting available slots:', error);
+    return ['Error al obtener los horarios disponibles.'];
+  }
+}
+
+// Función auxiliar para seleccionar slots distribuidos
+function selectDistributedSlots(slots: Array<{ start: Date; end: Date }>) {
+  if (slots.length <= 5) return slots;
+
+  // Dividir el día en segmentos para distribuir mejor los slots
+  const morning = slots.filter(slot => slot.start.getHours() < 12);
+  const afternoon = slots.filter(slot => slot.start.getHours() >= 12);
+
+  const result = [];
+  
+  // Intentar obtener 2-3 slots de la mañana
+  if (morning.length > 0) {
+    result.push(morning[0]); // Primer slot de la mañana
+    if (morning.length > 2) {
+      result.push(morning[Math.floor(morning.length / 2)]); // Slot medio de la mañana
+    }
+    if (morning.length > 1) {
+      result.push(morning[morning.length - 1]); // Último slot de la mañana
+    }
+  }
+
+  // Intentar obtener 2 slots de la tarde
+  if (afternoon.length > 0) {
+    result.push(afternoon[0]); // Primer slot de la tarde
+    if (afternoon.length > 1) {
+      result.push(afternoon[afternoon.length - 1]); // Último slot de la tarde
+    }
+  }
+
+  // Limitar a 5 slots
+  return result.slice(0, 5);
+}
+
+// Modificar checkAvailability para manejar automáticamente el email del usuario actual
+export async function checkAvailability(userId: string, otherUserEmail: string, date: string, time?: string): Promise<string[]> {
+  try {
+    // Si otherUserEmail es "me" o está vacío, obtener el email del usuario actual
+    if (!otherUserEmail || otherUserEmail === 'me') {
+      const currentUser = await db.select().from(users).where(eq(users.id, userId)).limit(1).execute();
+      if (!currentUser || currentUser.length === 0) {
+        return ['No se encontró la cuenta del usuario.'];
+      }
+      if (!currentUser[0].email) {
+        return ['Usuario no tiene email configurado.'];
+      }
+      otherUserEmail = currentUser[0].email;
+    }
+
+    const userAccount = await db.select().from(accounts).where(eq(accounts.userId, userId)).limit(1).execute();
+    if (!userAccount || userAccount.length === 0) {
+      return ['No se encontró la cuenta del usuario.'];
+    }
+
+    const startDate = new Date(date);
+    if (time) {
+      const [hour, minute] = time.split(':').map(Number);
+      startDate.setHours(hour, minute);
+    }
+    const endDate = new Date(startDate);
+    endDate.setHours(endDate.getHours() + 1); // Asumir una duración de 1 hora para la reunión
+
+    const otherUser = await db.select().from(users).where(eq(users.email, otherUserEmail)).limit(1).execute();
+    if (!otherUser || otherUser.length === 0) {
+      return [`No se encontró el usuario con email ${otherUserEmail} en el sistema.`];
+    }
+
+    // Obtener eventos del otro usuario
+    const otherUserEvents = await getEvents(otherUser[0].id, startDate, endDate);
+    if ('error' in otherUserEvents) {
+      return ['Error al obtener eventos del calendario.'];
+    }
+
+    const busySlots = otherUserEvents.map(event => ({
+      start: new Date(event.startTime),
+      end: new Date(event.endTime),
+    }));
+
+    // Obtener eventos del usuario actual
+    const userEvents = await getEvents(userId, startDate, endDate);
+    if ('error' in userEvents) {
+      return ['Error al obtener eventos del calendario.'];
+    }
+
+    // Agregar eventos del usuario actual a los slots ocupados
+    busySlots.push(...userEvents.map(event => ({
+      start: new Date(event.startTime),
+      end: new Date(event.endTime),
+    })));
+
+    // Encontrar slots disponibles
+    const availableSlots = findAvailableSlots(startDate, endDate, busySlots);
+
+    if (availableSlots.length === 0) {
+      return ['No hay espacios disponibles en el día seleccionado.'];
+    }
+
+    return availableSlots.map(slot => `Disponible: ${slot.start.toLocaleTimeString()} - ${slot.end.toLocaleTimeString()}`);
+  } catch (error) {
+    console.error('Error checking availability:', error);
+    return ['Error al verificar la disponibilidad.'];
+  }
 }
 
 export async function deleteEventByTitle(userId: string, eventTitle: string) {
@@ -470,7 +645,16 @@ export async function modifyEvent({
     console.log('Creating calendar instance');
     const calendar = google.calendar({ version: 'v3', auth: oauth2Client });
 
-    // Obtener el evento existente
+    // Validaciones iniciales
+    if (!eventId) {
+      return { error: 'Se requiere el ID del evento' };
+    }
+
+    if (!summary && !description && !location && !startDateTime && !endDateTime && !attendeesEmails) {
+      return { error: 'Se debe proporcionar al menos un campo para modificar' };
+    }
+
+    // Obtener el evento existente usando eventId
     const existingEvent = await calendar.events.get({
       calendarId: 'primary',
       eventId: eventId,
@@ -485,7 +669,7 @@ export async function modifyEvent({
       attendees: attendeesEmails ? attendeesEmails.map(email => ({ email })) : existingEvent.data.attendees,
     };
 
-    // Solo parsear y actualizar las fechas si se proporcionan nuevas
+    // Parsear y actualizar fechas si se proporcionan nuevas
     if (startDateTime) {
       const parsedStart = parseDateTime(startDateTime);
       event.start = parsedStart.date ? { date: parsedStart.date } : { dateTime: parsedStart.dateTime, timeZone: parsedStart.timeZone };
@@ -494,6 +678,58 @@ export async function modifyEvent({
     if (endDateTime) {
       const parsedEnd = parseDateTime(endDateTime);
       event.end = parsedEnd.date ? { date: parsedEnd.date } : { dateTime: parsedEnd.dateTime, timeZone: parsedEnd.timeZone };
+    }
+
+    // Validar horario laboral
+    if (startDateTime || endDateTime) {
+      const startHour = DateTime.fromISO(event.start.dateTime || '').hour;
+      const endHour = DateTime.fromISO(event.end.dateTime || '').hour;
+      
+      if (startHour < 8 || startHour > 17 || endHour < 8 || endHour > 17) {
+        return { 
+          error: 'El horario de la reunión debe estar dentro del horario laboral (8 AM - 5 PM)' 
+        };
+      }
+    }
+
+    // Verificar disponibilidad de asistentes
+    if (attendeesEmails && attendeesEmails.length > 0) {
+      for (const email of attendeesEmails) {
+        const userEvents = await getEvents(userId, new Date(event.start.dateTime!), new Date(event.end.dateTime!));
+        const otherUser = await db.select().from(users).where(eq(users.email, email)).limit(1);
+
+        if (!otherUser || otherUser.length === 0) {
+          return {
+            error: `No se encontró el usuario con email ${email} en el sistema.`
+          };
+        }
+
+        const otherUserEvents = await getEvents(otherUser[0].id, new Date(event.start.dateTime!), new Date(event.end.dateTime!));
+
+        if ('error' in userEvents || 'error' in otherUserEvents) {
+          return { error: 'Error al obtener eventos del calendario' };
+        }
+
+        const hasConflict = [...userEvents, ...otherUserEvents].some(evt => {
+          if (evt.id === eventId) return false; // Ignorar el evento actual
+          const eventStart = new Date(evt.startTime);
+          const eventEnd = new Date(evt.endTime);
+          const proposedStart = new Date(event.start.dateTime!);
+          const proposedEnd = new Date(event.end.dateTime!);
+          
+          return (
+            (proposedStart >= eventStart && proposedStart < eventEnd) ||
+            (proposedEnd > eventStart && proposedEnd <= eventEnd) ||
+            (proposedStart <= eventStart && proposedEnd >= eventEnd)
+          );
+        });
+
+        if (hasConflict) {
+          return {
+            error: `${email} tiene un conflicto de horario en el período seleccionado. Por favor, elige otro horario.`
+          };
+        }
+      }
     }
 
     console.log('Event object:', event);
@@ -516,16 +752,110 @@ export async function modifyEvent({
     };
   } catch (error) {
     console.error('Error in modifyEvent function:', error);
+    
     if (error instanceof Error) {
-      console.error('Error message:', error.message);
-      console.error('Error stack:', error.stack);
-    }
-    if (error instanceof Error && 'response' in error) {
-      const axiosError = error as any;
-      if (axiosError.response?.data?.error) {
-        console.error('Detailed API error:', axiosError.response.data.error);
+      if (error.message?.includes('invalid_grant')) {
+        return { error: 'El token de acceso ha expirado. Por favor, vuelve a iniciar sesión.' };
+      }
+      if (error.message?.includes('Not Found')) {
+        return { error: 'No se encontró el evento especificado.' };
+      }
+      if (error.message?.includes('forbidden')) {
+        return { error: 'No tienes permisos para modificar este evento.' };
       }
     }
-    throw error;
+    
+    return { error: 'Error al modificar el evento del calendario' };
   }
 }
+
+async function getEventIdByTitle(userId: string, eventTitle: string): Promise<string | null> {
+  try {
+    const userAccount = await db.select().from(accounts).where(eq(accounts.userId, userId)).limit(1).execute();
+    
+    if (!userAccount || !userAccount[0]?.refresh_token) {
+      throw new Error('No se encontró el token de actualización para el usuario');
+    }
+
+    const oauth2Client = createOAuth2Client();
+    oauth2Client.setCredentials({
+      refresh_token: userAccount[0].refresh_token,
+    });
+
+    const { credentials } = await oauth2Client.refreshAccessToken();
+    oauth2Client.setCredentials(credentials);
+
+    const calendar = google.calendar({ version: 'v3', auth: oauth2Client });
+
+    const events = await calendar.events.list({
+      calendarId: 'primary',
+      q: eventTitle, // Busca eventos que coincidan con el título
+      singleEvents: true,
+    });
+
+    if (!events.data.items || events.data.items.length === 0) {
+      return null;
+    }
+
+    // Retorna el ID del primer evento que coincida exactamente con el título
+    const event = events.data.items.find(event => event.summary === eventTitle);
+    return event?.id || null;
+  } catch (error) {
+    console.error('Error getting event ID:', error);
+    return null;
+  }
+}
+
+async function getEventIdsByTitle(userId: string, eventTitle: string): Promise<string[]> {
+  try {
+    const userAccount = await db.select().from(accounts).where(eq(accounts.userId, userId)).limit(1).execute();
+    
+    if (!userAccount || !userAccount[0]?.refresh_token) {
+      throw new Error('No se encontró el token de actualización para el usuario');
+    }
+
+    const oauth2Client = createOAuth2Client();
+    oauth2Client.setCredentials({
+      refresh_token: userAccount[0].refresh_token,
+    });
+
+    const { credentials } = await oauth2Client.refreshAccessToken();
+    oauth2Client.setCredentials(credentials);
+
+    const calendar = google.calendar({ version: 'v3', auth: oauth2Client });
+
+    const events = await calendar.events.list({
+      calendarId: 'primary',
+      q: eventTitle, // Busca eventos que coincidan con el título
+      singleEvents: true,
+    });
+
+    if (!events.data.items || events.data.items.length === 0) {
+      return [];
+    }
+
+    // Retorna todos los IDs de eventos que coincidan exactamente con el título
+    return events.data.items
+      .filter(event => event.summary === eventTitle)
+      .map(event => event.id!);
+  } catch (error) {
+    console.error('Error getting event IDs:', error);
+    return [];
+  }
+}
+
+export async function modifyEventByTitle(userId: string, eventTitle: string, updates: { /* campos a actualizar */ }) {
+  const eventIds = await getEventIdsByTitle(userId, eventTitle);
+  
+  if (eventIds.length === 0) {
+    return { error: `No se encontraron eventos con el título "${eventTitle}".` };
+  }
+
+  if (eventIds.length > 1) {
+    return { error: `Hay múltiples eventos con el título "${eventTitle}". Por favor, proporciona el ID del evento que deseas modificar.` };
+  }
+
+  const eventId = eventIds[0];
+  return modifyEvent({ userId, eventId, ...updates });
+}
+

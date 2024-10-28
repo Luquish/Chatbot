@@ -133,7 +133,10 @@ function ChatComponent() {
         {/* Mensajes */}
         <div className="flex-1 p-6 overflow-y-auto text-white" style={{ marginRight: '-17px', paddingRight: '17px' }}>
           <div className="space-y-4">
-          {messages.filter(m => !m.content.startsWith('__PROACTIVE_TRIGGER__')).map(m => (
+          {messages
+            .filter(m => !m.content.startsWith('__PROACTIVE_TRIGGER__'))
+            .filter(m => m.content.length > 0 && !m.content.startsWith('calling tool:'))
+            .map(m => (
               <div
                 key={m.id}
                 className={`whitespace-pre-wrap flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}
@@ -152,19 +155,10 @@ function ChatComponent() {
                   <div className={`font-bold ${m.role === 'user' ? 'text-green-400' : 'text-blue-300'}`}>
                     {m.role === 'user' ? 'You' : 'Onwy'}
                   </div>
-                  <p className="mt-1">
-                    {m.content.length > 0 ? (
-                      m.content
-                    ) : (
-                      <span className="italic font-light">
-                        {'calling tool: ' + m?.toolInvocations?.[0]?.toolName}
-                      </span>
-                    )}
-                  </p>
+                  <p className="mt-1">{m.content}</p>
                 </div>
               </div>
             ))}
-
             {/* Indicador "Bot is typing..." */}
             {isBotResponding && (
               <div className="whitespace-pre-wrap flex justify-start">

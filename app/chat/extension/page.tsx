@@ -47,24 +47,26 @@ export default function ChatPlugin() {
         className="flex-1 overflow-y-auto scrollbar-thin scrollbar-thumb-gray-600 scrollbar-track-gray-800"
       >
         <div className="flex flex-col justify-end min-h-full p-4">
-          {messages.map((m) => (
-            <div
-              key={m.id}
-              className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'} mb-2`}
-            >
+          {messages
+            .filter(m => m.content.length > 0 && !m.content.startsWith('calling tool:'))
+            .map((m) => (
               <div
-                className={`p-3 rounded-lg shadow ${
-                  m.role === 'user' ? 'bg-blue-600 text-white' : 'bg-gray-700 text-white'
-                }`}
-                style={{ maxWidth: '80%', wordBreak: 'break-word' }}
+                key={m.id}
+                className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'} mb-2`}
               >
-                <div className={`text-xs ${m.role === 'user' ? 'text-blue-200' : 'text-gray-400'}`}>
-                  {m.role === 'user' ? 'You' : 'Onwy'}
+                <div
+                  className={`p-3 rounded-lg shadow ${
+                    m.role === 'user' ? 'bg-blue-600 text-white' : 'bg-gray-700 text-white'
+                  }`}
+                  style={{ maxWidth: '80%', wordBreak: 'break-word' }}
+                >
+                  <div className={`text-xs ${m.role === 'user' ? 'text-blue-200' : 'text-gray-400'}`}>
+                    {m.role === 'user' ? 'You' : 'Onwy'}
+                  </div>
+                  <p className="mt-1 text-sm">{m.content}</p>
                 </div>
-                <p className="mt-1 text-sm">{m.content}</p>
               </div>
-            </div>
-          ))}
+            ))}
           {isBotResponding && (
             <div className="flex justify-start mb-2">
               <div className="p-3 rounded-lg shadow bg-gray-700 text-white" style={{ maxWidth: '80%' }}>

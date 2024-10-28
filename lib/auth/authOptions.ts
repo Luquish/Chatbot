@@ -135,11 +135,20 @@ export const authOptions: NextAuthOptions = {
     },
     events: {
       async signOut({ token, session }) {
-        if (token.provider === "google") {
-          const url = `https://accounts.google.com/o/oauth2/revoke?token=${token.accessToken}`;
-          await fetch(url, { method: "POST" });
+        try {
+          // No revocar el token de Google ya que queremos mantener el acceso
+          // Solo limpiar la sesión actual
+          await db
+            .update(accounts)
+            .set({ 
+              access_token: null,  // Solo limpiamos el access_token
+              expires_at: null     // y su fecha de expiración
+              // Mantenemos el refresh_token
+            })
+            .where(eq(accounts.userId, session?.user?.id));
+        } catch (error) {
+          console.error('Error during signOut:', error);
         }
-        // Puedes agregar lógica adicional aquí si es necesario
       },
     },
     pages: {
