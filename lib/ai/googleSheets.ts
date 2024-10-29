@@ -62,10 +62,26 @@ export async function getPayrollData(userId: string, query: string, userName: st
                 return employees.filter(criteria);
             };
 
-            // Función para obtener información del usuario actual
+            // Función para obtener el chief de una división específica
+            const getDivisionChief = (division: string) => {
+                const chief = findEmployeesByCriteria(row => 
+                    normalize(row[7]) === normalize(division) && // Misma división
+                    normalize(row[11]).includes('chief')         // Rango Chief
+                )[0];
+
+                if (!chief) {
+                    return `No se encontró un Chief para la división "${division}".`;
+                }
+
+                return `El Chief de la división "${division}" es ${capitalize(chief[4])} ${capitalize(chief[3])} (${chief[10]})`;
+            };
+
+            // Función mejorada para obtener información del usuario actual
             const getCurrentUserInfo = () => {
                 const currentUser = findEmployeesByCriteria(row => 
-                    normalize(`${row[4]} ${row[3]}`) === normalize(userName)
+                    normalize(`${row[4]} ${row[3]}`).includes(normalize(userName)) ||
+                    normalize(row[4]).includes(normalize(userName)) ||
+                    normalize(row[3]).includes(normalize(userName))
                 )[0];
 
                 if (!currentUser) {
@@ -74,6 +90,62 @@ export async function getPayrollData(userId: string, query: string, userName: st
 
                 return currentUser;
             };
+
+            // Manejar consultas sobre jefes/chiefs
+            if (query.includes("quien es el jefe") || query.includes("quién es el jefe")) {
+                // Si pregunta por el jefe de una división específica
+                if (query.includes("de la division") || query.includes("de la división") || 
+                    query.includes("del departamento")) {
+                    const divisionMatch = query.match(/(?:division|división|departamento)\s+(.+?)(?:\?|$)/i);
+                    if (divisionMatch) {
+                        const division = divisionMatch[1].trim();
+                        return getDivisionChief(division);
+                    }
+                }
+                
+                // Si pregunta por su propio jefe
+                const currentUser = getCurrentUserInfo();
+                if (typeof currentUser === "string") return currentUser;
+                
+                return getDivisionChief(currentUser[7]);
+            }
+
+            // Manejar consultas sobre compañeros
+            if (query.includes("mis compañeros") || query.includes("quienes son mis compañeros") || 
+                query.includes("quiénes son mis compañeros")) {
+                const currentUser = getCurrentUserInfo();
+                if (typeof currentUser === "string") return currentUser;
+
+                const colleagues = findEmployeesByCriteria(row => 
+                    row[7] === currentUser[7] && // Misma división
+                    `${row[4]} ${row[3]}` !== `${currentUser[4]} ${currentUser[3]}` // Excluir al usuario actual
+                );
+
+                if (colleagues.length === 0) {
+                    return "No se encontraron otros compañeros en tu división.";
+                }
+
+                return `Tus compañeros en la división ${currentUser[7]} son:\n${
+                    colleagues.map(colleague => 
+                        `- ${capitalize(colleague[4])} ${capitalize(colleague[3])} (${colleague[10]})`
+                    ).join('\n')
+                }`;
+            }
+
+            // Manejar consultas sobre "mis datos" o información personal
+            if (query.includes("mis datos") || query.includes("mi información")) {
+                const currentUser = getCurrentUserInfo();
+                if (typeof currentUser === "string") return currentUser;
+
+                return `Aquí está tu información:
+- Nombre completo: ${capitalize(currentUser[4])} ${capitalize(currentUser[3])}
+- Legajo: ${currentUser[2]}
+- División: ${currentUser[7]}
+- Área: ${currentUser[8]}
+- Subárea: ${currentUser[9]}
+- Cargo: ${currentUser[10]}
+- Fecha de inicio: ${currentUser[5]}`;
+            }
 
             // Manejar consultas sobre información personal del usuario actual
             if (query.includes("mi") || query.includes("yo") || query.includes("estoy")) {
