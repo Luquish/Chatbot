@@ -13,40 +13,40 @@ function GlowingSphere({ className = "" }) {
   return (
     <div className={`absolute pointer-events-none ${className}`}>
       <motion.div
-        className="relative w-[600px] h-[600px]"
+        className="relative w-[400px] h-[400px]"
         animate={{
-          scale: [1, 1.2, 1],
+          scale: [1, 1.3, 1],
           x: [0, 30, -30, 0],
           y: [0, -30, 30, 0],
         }}
         transition={{
-          duration: 8,
+          duration: 10,
           repeat: Infinity,
           repeatType: "reverse",
           ease: "easeInOut",
         }}
       >
         <motion.div
-          className="absolute inset-0 bg-gradient-to-br from-green-400 via-emerald-500 to-teal-600 rounded-full blur-[100px] opacity-40"
+          className="absolute inset-0 bg-gradient-to-br from-green-400 via-emerald-500 to-teal-600 rounded-full blur-[60px] opacity-40"
           animate={{
-            scale: [1, 1.1, 1],
-            rotate: [0, 20, -20, 0],
+            scale: [1, 1.2, 1],
+            rotate: [0, 30, -30, 0],
           }}
           transition={{
-            duration: 6,
+            duration: 8,
             repeat: Infinity,
             repeatType: "reverse",
             ease: "easeInOut",
           }}
         />
         <motion.div
-          className="absolute inset-0 bg-gradient-to-tl from-lime-300 via-green-400 to-emerald-600 rounded-full blur-[100px] opacity-40 mix-blend-screen"
+          className="absolute inset-0 bg-gradient-to-tl from-green-300 via-emerald-400 to-teal-500 rounded-full blur-[60px] opacity-40 mix-blend-screen"
           animate={{
-            scale: [1, 1.2, 1],
-            rotate: [0, -20, 20, 0],
+            scale: [1, 1.3, 1],
+            rotate: [0, -30, 30, 0],
           }}
           transition={{
-            duration: 7,
+            duration: 9,
             repeat: Infinity,
             repeatType: "reverse",
             ease: "easeInOut",
@@ -75,7 +75,7 @@ export default function LandingPage() {
   }
 
   return (
-    <div className="relative flex flex-col items-center justify-center min-h-screen bg-black text-white p-4 overflow-hidden">
+    <div className="relative flex flex-col items-center justify-center min-h-screen bg-gray-900 text-white p-4 overflow-hidden">
       
       <motion.div
         initial={{ opacity: 0, y: -20 }}
@@ -115,7 +115,7 @@ export default function LandingPage() {
         <Button
           variant="outline"
           size="lg"
-          className="bg-transparent border-2 border-emerald-500 text-emerald-500 hover:bg-emerald-500 hover:text-white transition-all duration-300 text-lg sm:text-xl py-4 sm:py-6 px-6 sm:px-8"
+          className="bg-gray-900 border-2 border-transparent bg-gradient-to-r from-green-400 to-teal-500 bg-clip-border text-white hover:from-green-500 hover:to-teal-600 transition-all duration-300 text-lg sm:text-xl py-4 sm:py-6 px-6 sm:px-8"
           onMouseEnter={() => setHoverButton(true)}
           onMouseLeave={() => setHoverButton(false)}
           onClick={handleSignIn}
