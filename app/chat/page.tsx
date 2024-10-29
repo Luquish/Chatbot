@@ -11,6 +11,7 @@ import ProactiveMessages from '@/app/chat/components/ProactiveMessages';
 import TextareaAutosize from 'react-textarea-autosize';
 import { Button } from "@/components/ui/button"
 import { Send, Loader2 } from 'lucide-react'; // Importa los iconos
+import ReactMarkdown from 'react-markdown';
 
 // Componente principal de la página de chat
 function ChatComponent() {
@@ -155,7 +156,37 @@ function ChatComponent() {
                   <div className={`font-bold ${m.role === 'user' ? 'text-green-400' : 'text-blue-300'}`}>
                     {m.role === 'user' ? 'You' : 'Onwy'}
                   </div>
-                  <p className="mt-1">{m.content}</p>
+                  <div className="mt-1 markdown-content whitespace-normal">
+                    <ReactMarkdown
+                      components={{
+                        a: ({ node, ...props }) => (
+                          <a
+                            {...props}
+                            className="text-blue-400 hover:text-blue-300 break-all"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                          />
+                        ),
+                        p: ({ node, ...props }) => (
+                          <p {...props} className="mb-2 last:mb-0 whitespace-pre-line" />
+                        ),
+                        strong: ({ node, ...props }) => (
+                          <strong {...props} className="font-bold" />
+                        ),
+                        ul: ({ node, ...props }) => (
+                          <ul {...props} className="list-disc pl-6 mb-2" />
+                        ),
+                        ol: ({ node, ...props }) => (
+                          <ol {...props} className="list-decimal pl-6 mb-2" />
+                        ),
+                        li: ({ node, ...props }) => (
+                          <li {...props} className="mb-1" />
+                        ),
+                      }}
+                    >
+                      {m.content.trim()}
+                    </ReactMarkdown>
+                  </div>
                 </div>
               </div>
             ))}
@@ -199,7 +230,7 @@ function ChatComponent() {
             <TextareaAutosize
               className={`w-full p-3 pr-12 bg-gray-800 text-white rounded-lg shadow-lg focus:outline-none focus:ring-2 focus:ring-opacity-50 focus:ring-offset-2 transition-all duration-300 ease-in-out resize-none overflow-y-auto`}
               value={input}
-              placeholder="Type your message here..."
+              placeholder="Escribe tu mensaje aquí..."
               onChange={handleInputChange}
               onKeyDown={handleKeyDown}
               minRows={1}
@@ -210,9 +241,9 @@ function ChatComponent() {
             />
             <button
               type="submit"
-              disabled={input.trim() === ''}
+              disabled={input.trim() === '' || isBotResponding}
               className={`absolute right-2 bottom-3 p-2 rounded-full transition-colors duration-200 ${
-                input.trim() === ''
+                input.trim() === '' || isBotResponding
                   ? 'text-gray-400 cursor-not-allowed'
                   : 'text-green-500 hover:text-green-600'
               }`}
