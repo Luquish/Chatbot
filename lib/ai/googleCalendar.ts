@@ -235,7 +235,23 @@ export async function createEvent({
   }
 }
 
-export async function getEvents(userId: string, startDate?: Date, endDate?: Date) {
+// Add new interface for event details
+interface EventWithCreator {
+  id: string;
+  name: string;
+  eventLink: string;
+  startTime: string;
+  endTime: string;
+  attendees: string[];
+  description?: string;
+  creator?: {
+    email: string;
+    self?: boolean;
+  };
+}
+
+// Modify getEvents to include description and creator
+export async function getEvents(userId: string, startDate?: Date, endDate?: Date): Promise<EventWithCreator[] | { error: string }> {
   try {
     console.log('Starting getEvents function');
     console.log('User ID:', userId);
@@ -291,12 +307,14 @@ export async function getEvents(userId: string, startDate?: Date, endDate?: Date
     console.log('Events:', events);
 
     return events.map((event: any) => ({
-      id: event.id, // Agregar esta línea
+      id: event.id,
       name: event.summary,
       eventLink: event.htmlLink,
       startTime: event.start.dateTime || event.start.date,
       endTime: event.end.dateTime || event.end.date,
       attendees: event.attendees?.map((attendee: any) => attendee.email) || [],
+      description: event.description || '',
+      creator: event.creator
     }));
   } catch (error: unknown) {
     console.error('Error in getEvents function:', error);
@@ -857,5 +875,68 @@ export async function modifyEventByTitle(userId: string, eventTitle: string, upd
 
   const eventId = eventIds[0];
   return modifyEvent({ userId, eventId, ...updates });
+}
+
+// Add new function to send email to event creator
+export async function sendDescriptionRequest(
+  userId: string,
+  eventId: string,
+  creatorEmail: string
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    const userAccount = await db.select().from(accounts).where(eq(accounts.userId, userId)).limit(1).execute();
+    
+    if (!userAccount || !userAccount[0]?.refresh_token) {
+      return { success: false, error: 'No se encontró el token de actualización para el usuario' };
+    }
+
+    const oauth2Client = createOAuth2Client();
+    oauth2Client.setCredentials({
+      refresh_token: userAccount[0].refresh_token,
+    });
+
+    const { credentials } = await oauth2Client.refreshAccessToken();
+    oauth2Client.setCredentials(credentials);
+
+    const gmail = google.gmail({ version: 'v1', auth: oauth2Client });
+
+    // Get user info for email signature
+    const currentUser = await db.select().from(users).where(eq(users.id, userId)).limit(1).execute();
+    const userName = currentUser[0]?.name || 'Un participante';
+
+    const emailContent = `
+      Hola,
+      
+      Soy ${userName} y estoy invitado a una próxima reunión en tu calendario. Me gustaría conocer más detalles sobre los temas a tratar para poder prepararme adecuadamente.
+      
+      ¿Podrías por favor agregar una descripción al evento con los puntos principales que se discutirán?
+      
+      ¡Gracias!
+      ${userName}
+    `;
+
+    const email = [
+      'Content-Type: text/plain; charset="UTF-8"\n',
+      'MIME-Version: 1.0\n',
+      `To: ${creatorEmail}\n`,
+      'Subject: Solicitud de descripción para próxima reunión\n',
+      '\n',
+      emailContent
+    ].join('');
+
+    const encodedEmail = Buffer.from(email).toString('base64').replace(/\+/g, '-').replace(/\//g, '_');
+
+    await gmail.users.messages.send({
+      userId: 'me',
+      requestBody: {
+        raw: encodedEmail
+      }
+    });
+
+    return { success: true };
+  } catch (error) {
+    console.error('Error sending email:', error);
+    return { success: false, error: 'Error al enviar el correo electrónico' };
+  }
 }
 

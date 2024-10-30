@@ -13,7 +13,7 @@ import { eq } from 'drizzle-orm';
 import { format, addDays, addWeeks, isBefore, startOfDay } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { getPayrollData } from '../../../lib/ai/googleSheets';
-import { getEvents, checkAvailability, createEvent, deleteEventByTitle, modifyEvent, getAvailableSlots} from '@/lib/ai/googleCalendar';
+import { getEvents, checkAvailability, createEvent, deleteEventByTitle, modifyEvent, getAvailableSlots, sendDescriptionRequest } from '@/lib/ai/googleCalendar';
 
 // Initialize the groq model
 const groq = createGroq({
@@ -73,9 +73,9 @@ export async function POST(req: Request) {
 
   const nextDays = Array.from({ length: 7 }, (_, i) => getNextWeekday(today, i));
 
-  // {{ Cambio 1: Cambiar el modelo a gpt-3.5-turbo y optimizar el uso de tokens }}
+  // {{ Cambio 1: Cambiar el modelo a gpt-4o-mini y optimizar el uso de tokens }}
   const result = await streamText({
-    model: openai('gpt-3.5-turbo'),
+    model: openai('gpt-4o-mini'),
     messages: convertToCoreMessages(messagesToSend),
     system: `Eres un asistente útil de profesionalización y embajador de la cultura de la empresa llamado Onwy. Estás hablando con ${userName}. (Decile solo por su nombre) 
     Recuérdalo siempre y avísale a los usuarios cuando comiencen a usarlo.
@@ -312,6 +312,13 @@ export async function POST(req: Request) {
        - Ejemplo: "¿Qué eventos tengo esta semana?" o "Muéstrame mis eventos para mañana".
        - Después de obtener los eventos, revisa si alguno no tiene descripción. Si encuentras eventos sin descripción, notifica al usuario y ofrece modificarlos usando la herramienta modifyEvent.
        - Ejemplo de notificación: "He notado que el evento '[Título del evento]' no tiene descripción. ¿Te gustaría agregar una descripción a este evento?"
+       
+       IMPORTANTE: Cada vez que muestres eventos del calendario:
+      1. Después de listar los eventos, SIEMPRE usa checkEventDescriptions
+      2. Si encuentras eventos sin descripción:
+         - Si el creador es otro usuario, di: "He notado que el evento '[nombre]' no tiene descripción. ¿Te gustaría que envíe un mensaje al organizador solicitando más detalles?"
+         - Si el creador es el usuario actual, di: "He notado que tu evento '[nombre]' no tiene descripción. ¿Te gustaría agregar una ahora?"
+      3. Espera la confirmación del usuario antes de enviar mensajes o modificar eventos
 
     2. Para verificar disponibilidad:
        - Usa la herramienta checkAvailability cuando el usuario quiera saber cuándo está disponible para una reunión con otro usuario.
@@ -562,6 +569,48 @@ export async function POST(req: Request) {
                   {userId, eventId: eventId || '', summary: summary || '', description: description || '', location: location || '', startDateTime: startDateTime || '', endDateTime: endDateTime || '', attendeesEmails: attendeesEmails || []}
               ),
       }),
+      checkEventDescriptions: tool({
+        description: 'Revisar eventos próximos sin descripción y ofrecer enviar solicitud al organizador',
+        parameters: z.object({}),
+        execute: async () => {
+          const now = new Date();
+          const twoWeeksFromNow = new Date();
+          twoWeeksFromNow.setDate(twoWeeksFromNow.getDate() + 14);
+          
+          const events = await getEvents(userId, now, twoWeeksFromNow);
+          
+          if ('error' in events) {
+            return { error: events.error };
+          }
+
+          const eventsWithoutDescription = events.filter(event => 
+            !event.description && event.creator && !event.creator.self
+          );
+
+          if (eventsWithoutDescription.length === 0) {
+            return { message: 'Todos los eventos próximos tienen descripción.' };
+          }
+
+          return {
+            eventsWithoutDescription: eventsWithoutDescription.map(event => ({
+              id: event.id,
+              name: event.name,
+              startTime: event.startTime,
+              creator: event.creator
+            }))
+          };
+        }
+      }),
+      requestEventDescription: tool({
+        description: 'Enviar solicitud de descripción al organizador del evento',
+        parameters: z.object({
+          eventId: z.string().describe('ID del evento'),
+          creatorEmail: z.string().describe('Email del organizador')
+        }),
+        execute: async ({ eventId, creatorEmail }) => {
+          return sendDescriptionRequest(userId, eventId, creatorEmail);
+        }
+      })
     },
  });
 

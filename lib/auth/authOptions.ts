@@ -28,7 +28,8 @@ export const authOptions: NextAuthOptions = {
               "https://www.googleapis.com/auth/userinfo.profile",
               "https://www.googleapis.com/auth/calendar",
               "https://www.googleapis.com/auth/calendar.events",
-              "https://www.googleapis.com/auth/spreadsheets.readonly"
+              "https://www.googleapis.com/auth/spreadsheets.readonly",
+              "https://www.googleapis.com/auth/gmail.send"
             ].join(' '),
             response_type: "code"
           }

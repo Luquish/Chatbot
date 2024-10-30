@@ -28,6 +28,7 @@ export function ProactiveMessages({ onSendProactiveMessage }: { onSendProactiveM
         if (inactiveTime > INACTIVITY_TIMEOUT) {
           const proactivePrompts = [
             "ofrecimiento de ayuda",
+            "ofrecimiento de ayuda para prepararse para una reunion proxima (usar getEvent y elegir el proximo evento)",
             "recordatorio de tareas pendientes",
             "sugerencia de actividad productiva",
             "consultar que estoy haciendo",

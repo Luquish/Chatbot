@@ -12,9 +12,10 @@ import TextareaAutosize from 'react-textarea-autosize';
 import { Button } from "@/components/ui/button"
 import { Send, Loader2 } from 'lucide-react'; // Importa los iconos
 import ReactMarkdown from 'react-markdown';
+import { Suspense } from 'react';
 
-// Componente principal de la página de chat
-function ChatComponent() {
+// Componente separado para el contenido del chat
+function ChatContent() {
     const { data: session, status } = useSession();
     const router = useRouter();
     const searchParams = useSearchParams();
@@ -44,14 +45,14 @@ function ChatComponent() {
       if (messagesEndRef.current) {
         messagesEndRef.current.scrollIntoView({ behavior: 'smooth' });
       }
+    }, [messages]);
 
-      // Mostrar feedback después de cada respuesta del asistente
+    useEffect(() => {
       if (messages.length >= 2) {
         const lastMessage = messages[messages.length - 1];
         const previousMessage = messages[messages.length - 2];
         
-        // Verificar que el último mensaje sea del asistente y el anterior del usuario
-        if (lastMessage.role !== 'user' && previousMessage.role === 'user') {
+        if (lastMessage.role !== 'user' && previousMessage.role === 'user' && !showFeedback) {
           setCurrentFeedbackMessage({
             prompt: previousMessage.content,
             response: lastMessage.content,
@@ -59,7 +60,7 @@ function ChatComponent() {
           setShowFeedback(true);
         }
       }
-    }, [messages]);
+    }, [messages, showFeedback]);
 
     if (status === 'loading') {
       return <div>Loading...</div>;
@@ -261,6 +262,16 @@ function ChatComponent() {
   );
 }
 
+// Componente principal envuelto en Suspense
+function ChatComponent() {
+  return (
+    <Suspense fallback={<div>Loading...</div>}>
+      <ChatContent />
+    </Suspense>
+  );
+}
+
+// Componente de la página
 export default function Chat() {
   return (
     <SessionProvider>
