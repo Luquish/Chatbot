@@ -139,47 +139,6 @@ export async function createEvent({
       };
     }
 
-    // Verificar disponibilidad de los asistentes
-    if (attendeesEmails && attendeesEmails.length > 0) {
-      for (const email of attendeesEmails) {
-        const userEvents = await getEvents(userId, new Date(parsedStart.dateTime!), new Date(parsedEnd.dateTime!));
-        const otherUser = await db.select().from(users).where(eq(users.email, email)).limit(1);
-        
-        if (!otherUser || otherUser.length === 0) {
-          return {
-            error: `No se encontró el usuario con email ${email} en el sistema.`
-          };
-        }
-
-        const otherUserEvents = await getEvents(otherUser[0].id, new Date(parsedStart.dateTime!), new Date(parsedEnd.dateTime!));
-        
-        // Check if either result is an error object
-        if ('error' in userEvents || 'error' in otherUserEvents) {
-          return { error: 'Error al obtener eventos del calendario' };
-        }
-
-        // Now we know both are arrays
-        const hasConflict = [...userEvents, ...otherUserEvents].some(event => {
-          const eventStart = new Date(event.startTime);
-          const eventEnd = new Date(event.endTime);
-          const proposedStart = new Date(parsedStart.dateTime!);
-          const proposedEnd = new Date(parsedEnd.dateTime!);
-          
-          return (
-            (proposedStart >= eventStart && proposedStart < eventEnd) ||
-            (proposedEnd > eventStart && proposedEnd <= eventEnd) ||
-            (proposedStart <= eventStart && proposedEnd >= eventEnd)
-          );
-        });
-
-        if (hasConflict) {
-          return {
-            error: `${email} tiene un conflicto de horario en el período seleccionado. Por favor, elige otro horario.`
-          };
-        }
-      }
-    }
-
     const event: any = {
       summary: summary,
       description: description,
@@ -204,11 +163,9 @@ export async function createEvent({
 
     console.log('Inserting event');
     const res = await calendar.events.insert({
-      calendarId: 'primary', // Usar 'primary' por defecto
+      calendarId: 'primary',
       requestBody: event,
-      // sendNotifications: true, // Campo deprecated, eliminar
-      sendUpdates: 'all', // Usar sendUpdates en su lugar
-      // Puedes agregar otros campos como 'conferenceDataVersion' si es necesario
+      sendUpdates: 'all',
     });
     console.log('Event created successfully');
 
@@ -787,43 +744,7 @@ export async function modifyEvent({
   }
 }
 
-async function getEventIdByTitle(userId: string, eventTitle: string): Promise<string | null> {
-  try {
-    const userAccount = await db.select().from(accounts).where(eq(accounts.userId, userId)).limit(1).execute();
-    
-    if (!userAccount || !userAccount[0]?.refresh_token) {
-      throw new Error('No se encontró el token de actualización para el usuario');
-    }
-
-    const oauth2Client = createOAuth2Client();
-    oauth2Client.setCredentials({
-      refresh_token: userAccount[0].refresh_token,
-    });
-
-    const { credentials } = await oauth2Client.refreshAccessToken();
-    oauth2Client.setCredentials(credentials);
-
-    const calendar = google.calendar({ version: 'v3', auth: oauth2Client });
-
-    const events = await calendar.events.list({
-      calendarId: 'primary',
-      q: eventTitle, // Busca eventos que coincidan con el título
-      singleEvents: true,
-    });
-
-    if (!events.data.items || events.data.items.length === 0) {
-      return null;
-    }
-
-    // Retorna el ID del primer evento que coincida exactamente con el título
-    const event = events.data.items.find(event => event.summary === eventTitle);
-    return event?.id || null;
-  } catch (error) {
-    console.error('Error getting event ID:', error);
-    return null;
-  }
-}
-
+// Mejorar la función getEventIdsByTitle para ser más precisa
 async function getEventIdsByTitle(userId: string, eventTitle: string): Promise<string[]> {
   try {
     const userAccount = await db.select().from(accounts).where(eq(accounts.userId, userId)).limit(1).execute();
@@ -842,19 +763,25 @@ async function getEventIdsByTitle(userId: string, eventTitle: string): Promise<s
 
     const calendar = google.calendar({ version: 'v3', auth: oauth2Client });
 
+    // Buscar eventos recientes (últimas 24 horas) que coincidan con el título
+    const timeMin = new Date();
+    timeMin.setHours(timeMin.getHours() - 24);
+
     const events = await calendar.events.list({
       calendarId: 'primary',
-      q: eventTitle, // Busca eventos que coincidan con el título
+      q: eventTitle,
+      timeMin: timeMin.toISOString(),
       singleEvents: true,
+      orderBy: 'startTime'
     });
 
     if (!events.data.items || events.data.items.length === 0) {
       return [];
     }
 
-    // Retorna todos los IDs de eventos que coincidan exactamente con el título
+    // Filtrar eventos que coincidan exactamente con el título
     return events.data.items
-      .filter(event => event.summary === eventTitle)
+      .filter(event => event.summary?.toLowerCase() === eventTitle.toLowerCase())
       .map(event => event.id!);
   } catch (error) {
     console.error('Error getting event IDs:', error);
@@ -862,19 +789,47 @@ async function getEventIdsByTitle(userId: string, eventTitle: string): Promise<s
   }
 }
 
-export async function modifyEventByTitle(userId: string, eventTitle: string, updates: { /* campos a actualizar */ }) {
-  const eventIds = await getEventIdsByTitle(userId, eventTitle);
-  
-  if (eventIds.length === 0) {
-    return { error: `No se encontraron eventos con el título "${eventTitle}".` };
-  }
+// Mejorar la función modifyEventByTitle para manejar mejor los errores
+export async function modifyEventByTitle(
+  userId: string, 
+  eventTitle: string, 
+  updates: any
+): Promise<{ success: boolean; message?: string; error?: string }> {
+  try {
+    const eventIds = await getEventIdsByTitle(userId, eventTitle);
+    
+    if (eventIds.length === 0) {
+      return { 
+        success: false, 
+        error: `No se encontró ningún evento reciente con el título "${eventTitle}".` 
+      };
+    }
 
-  if (eventIds.length > 1) {
-    return { error: `Hay múltiples eventos con el título "${eventTitle}". Por favor, proporciona el ID del evento que deseas modificar.` };
-  }
+    if (eventIds.length > 1) {
+      return { 
+        success: false, 
+        error: `Se encontraron múltiples eventos con el título "${eventTitle}". Por favor, sé más específico.` 
+      };
+    }
 
-  const eventId = eventIds[0];
-  return modifyEvent({ userId, eventId, ...updates });
+    const eventId = eventIds[0];
+    const result = await modifyEvent({ userId, eventId, ...updates });
+
+    if ('error' in result) {
+      return { success: false, error: result.error };
+    }
+
+    return { 
+      success: true, 
+      message: `El evento "${eventTitle}" ha sido modificado exitosamente.` 
+    };
+  } catch (error) {
+    console.error('Error in modifyEventByTitle:', error);
+    return { 
+      success: false, 
+      error: 'Error al modificar el evento.' 
+    };
+  }
 }
 
 // Add new function to send email to event creator

@@ -138,13 +138,13 @@ export async function getPayrollData(userId: string, query: string, userName: st
                 if (typeof currentUser === "string") return currentUser;
 
                 return `Aquí está tu información:
-- Nombre completo: ${capitalize(currentUser[4])} ${capitalize(currentUser[3])}
-- Legajo: ${currentUser[2]}
-- División: ${currentUser[7]}
-- Área: ${currentUser[8]}
-- Subárea: ${currentUser[9]}
-- Cargo: ${currentUser[10]}
-- Fecha de inicio: ${currentUser[5]}`;
+                            - Nombre completo: ${capitalize(currentUser[4])} ${capitalize(currentUser[3])}
+                            - Legajo: ${currentUser[2]}
+                            - División: ${currentUser[7]}
+                            - Área: ${currentUser[8]}
+                            - Subárea: ${currentUser[9]}
+                            - Cargo: ${currentUser[10]}
+                            - Fecha de inicio: ${currentUser[5]}`;
             }
 
             // Manejar consultas sobre información personal del usuario actual
