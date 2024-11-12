@@ -44,8 +44,13 @@ export async function getPayrollData(userId: string, query: string, userName: st
 
         const data = response.data.values || [];
         if (data.length === 0) {
+          console.log("No se encontraron datos en la hoja de cálculo");
           return "No se encontraron datos en la hoja de cálculo.";
         }
+
+        // Verificar la estructura de los datos
+        console.log("Estructura de la primera fila:", data[0]);
+        console.log("Ejemplo de fila de datos:", data[1]);
 
         const headers = data[0];
         const employees = data.slice(1);
@@ -65,8 +70,8 @@ export async function getPayrollData(userId: string, query: string, userName: st
             // Función para obtener el chief de una división específica
             const getDivisionChief = (division: string) => {
                 const chief = findEmployeesByCriteria(row => 
-                    normalize(row[7]) === normalize(division) && // Misma división
-                    normalize(row[11]).includes('chief')         // Rango Chief
+                    normalize(row[6]) === normalize(division) && // División (índice 6)
+                    normalize(row[10]).includes('chief')         // Cargo (índice 10)
                 )[0];
 
                 if (!chief) {
@@ -76,24 +81,28 @@ export async function getPayrollData(userId: string, query: string, userName: st
                 return `El Chief de la división "${division}" es ${capitalize(chief[4])} ${capitalize(chief[3])} (${chief[10]})`;
             };
 
-            // Función mejorada para obtener información del usuario actual
+            // Función para obtener información del usuario actual
             const getCurrentUserInfo = () => {
-                const currentUser = findEmployeesByCriteria(row => 
-                    normalize(`${row[4]} ${row[3]}`).includes(normalize(userName)) ||
-                    normalize(row[4]).includes(normalize(userName)) ||
-                    normalize(row[3]).includes(normalize(userName))
-                )[0];
+                console.log("Buscando usuario:", userName);
+                const currentUser = findEmployeesByCriteria(row => {
+                    const fullName = `${row[4]} ${row[3]}`;
+                    console.log("Comparando con:", fullName);
+                    return normalize(`${row[4]} ${row[3]}`).includes(normalize(userName)) ||
+                           normalize(row[4]).includes(normalize(userName)) ||
+                           normalize(row[3]).includes(normalize(userName));
+                })[0];
 
                 if (!currentUser) {
+                    console.log("Usuario no encontrado en la nómina");
                     return "No se encontraron datos para el usuario actual en la nómina.";
                 }
 
+                console.log("Usuario encontrado:", currentUser);
                 return currentUser;
             };
 
             // Manejar consultas sobre jefes/chiefs
             if (query.includes("quien es el jefe") || query.includes("quién es el jefe")) {
-                // Si pregunta por el jefe de una división específica
                 if (query.includes("de la division") || query.includes("de la división") || 
                     query.includes("del departamento")) {
                     const divisionMatch = query.match(/(?:division|división|departamento)\s+(.+?)(?:\?|$)/i);
@@ -103,11 +112,10 @@ export async function getPayrollData(userId: string, query: string, userName: st
                     }
                 }
                 
-                // Si pregunta por su propio jefe
                 const currentUser = getCurrentUserInfo();
                 if (typeof currentUser === "string") return currentUser;
                 
-                return getDivisionChief(currentUser[7]);
+                return getDivisionChief(currentUser[6]); // División (índice 6)
             }
 
             // Manejar consultas sobre compañeros
@@ -117,7 +125,7 @@ export async function getPayrollData(userId: string, query: string, userName: st
                 if (typeof currentUser === "string") return currentUser;
 
                 const colleagues = findEmployeesByCriteria(row => 
-                    row[7] === currentUser[7] && // Misma división
+                    row[6] === currentUser[6] && // División (índice 6)
                     `${row[4]} ${row[3]}` !== `${currentUser[4]} ${currentUser[3]}` // Excluir al usuario actual
                 );
 
@@ -125,7 +133,7 @@ export async function getPayrollData(userId: string, query: string, userName: st
                     return "No se encontraron otros compañeros en tu división.";
                 }
 
-                return `Tus compañeros en la división ${currentUser[7]} son:\n${
+                return `Tus compañeros en la división ${currentUser[6]} son:\n${
                     colleagues.map(colleague => 
                         `- ${capitalize(colleague[4])} ${capitalize(colleague[3])} (${colleague[10]})`
                     ).join('\n')
@@ -140,9 +148,11 @@ export async function getPayrollData(userId: string, query: string, userName: st
                 return `Aquí está tu información:
                             - Nombre completo: ${capitalize(currentUser[4])} ${capitalize(currentUser[3])}
                             - Legajo: ${currentUser[2]}
-                            - División: ${currentUser[7]}
-                            - Área: ${currentUser[8]}
-                            - Subárea: ${currentUser[9]}
+                            - Sede: ${currentUser[0]}
+                            - División: ${currentUser[6]}
+                            - Área: ${currentUser[7]}
+                            - Subárea: ${currentUser[8]}
+                            - Equipo: ${currentUser[9]}
                             - Cargo: ${currentUser[10]}
                             - Fecha de inicio: ${currentUser[5]}`;
             }
@@ -153,11 +163,41 @@ export async function getPayrollData(userId: string, query: string, userName: st
                 if (typeof currentUser === "string") return currentUser;
 
                 if (query.includes("area de trabajo") || query.includes("área de trabajo")) {
-                    return `Tu área de trabajo es: ${currentUser[8]}`;
+                    return `Tu área de trabajo es: ${currentUser[7]}`; // Área (índice 7)
                 } else if (query.includes("tipo de empleo")) {
-                    return `Tu tipo de empleo es: ${currentUser[11]}`;
+                    return `Tu tipo de empleo es: ${currentUser[1]}`; // Tipo de empleo (índice 1)
                 } else if (query.includes("division") || query.includes("división")) {
-                    return `Estás en la división: ${currentUser[7]}`;
+                    return `Estás en la división: ${currentUser[6]}`; // División (índice 6)
+                } else if (query.includes("cuando cumplo") || query.includes("cuándo cumplo") || 
+                         query.includes("cumpleaños") || query.includes("cumplo años")) {  // Agregamos más variaciones
+                    console.log("Detectada consulta de cumpleaños");
+                    const currentUser = getCurrentUserInfo();
+                    console.log("Resultado getCurrentUserInfo:", currentUser);
+                    
+                    if (typeof currentUser === "string") {
+                        return currentUser;
+                    }
+                    
+                    if (!currentUser[13]) {
+                        return "No se encontró la fecha de nacimiento en tus datos. Por favor, contacta a RRHH.";
+                    }
+                    
+                    return `Tu fecha de nacimiento es el ${formatDate(currentUser[13])}`;
+                } else if (query.includes("nacionalidad") || query.includes("de donde soy") || 
+                         query.includes("de dónde soy")) {
+                    console.log("Detectada consulta de nacionalidad");
+                    const currentUser = getCurrentUserInfo();
+                    console.log("Resultado getCurrentUserInfo:", currentUser);
+                    
+                    if (typeof currentUser === "string") {
+                        return currentUser;
+                    }
+                    
+                    if (!currentUser[15]) {
+                        return "No se encontró tu nacionalidad en los datos. Por favor, contacta a RRHH.";
+                    }
+                    
+                    return `Tu nacionalidad es: ${currentUser[15]}`;
                 }
             }
 
@@ -166,55 +206,48 @@ export async function getPayrollData(userId: string, query: string, userName: st
                 const currentUser = getCurrentUserInfo();
                 if (typeof currentUser === "string") return currentUser;
 
-                const teamMembers = findEmployeesByCriteria(row => row[8] === currentUser[8]);
-                return `Los miembros de tu área (${currentUser[8]}) son:\n${teamMembers.map(member => `- ${capitalize(member[4])} ${capitalize(member[3])} (${member[10]})`).join('\n')}`;
-            }
-
-            if (query.includes("quienes estan en la misma division") || query.includes("quiénes están en la misma división")) {
-                const currentUser = getCurrentUserInfo();
-                if (typeof currentUser === "string") return currentUser;
-
-                const divisionMembers = findEmployeesByCriteria(row => row[7] === currentUser[7]);
-                return `Los miembros de tu división (${currentUser[7]}) son:\n${divisionMembers.map(member => `- ${capitalize(member[4])} ${capitalize(member[3])} (${member[10]})`).join('\n')}`;
+                const teamMembers = findEmployeesByCriteria(row => row[7] === currentUser[7]); // Área (índice 7)
+                return `Los miembros de tu área (${currentUser[7]}) son:\n${teamMembers.map(member => 
+                    `- ${capitalize(member[4])} ${capitalize(member[3])} (${member[10]})`).join('\n')}`;
             }
 
             // Manejar consultas sobre áreas específicas
             if (query.includes("quienes trabajan en el area") || query.includes("quiénes trabajan en el área")) {
                 const area = query.split("area")[1].trim();
-                const areaMembers = findEmployeesByCriteria(row => normalize(row[8]) === normalize(area));
-                return `Los miembros del área "${area}" son:\n${areaMembers.map(member => `- ${capitalize(member[4])} ${capitalize(member[3])} (${member[10]})`).join('\n')}`;
-            }
-
-            if (query.includes("cargo de los integrantes de la division") || query.includes("cargo de los integrantes de la división")) {
-                const division = query.split("division")[1].trim();
-                const divisionMembers = findEmployeesByCriteria(row => normalize(row[7]) === normalize(division));
-                return `Los cargos de los integrantes de la división "${division}" son:\n${divisionMembers.map(member => `- ${capitalize(member[4])} ${capitalize(member[3])}: ${member[10]}`).join('\n')}`;
+                const areaMembers = findEmployeesByCriteria(row => normalize(row[7]) === normalize(area)); // Área (índice 7)
+                return `Los miembros del área "${area}" son:\n${areaMembers.map(member => 
+                    `- ${capitalize(member[4])} ${capitalize(member[3])} (${member[10]})`).join('\n')}`;
             }
 
             // Manejar consultas sobre datos de terceros
             if (query.includes("cumpleaños de")) {
                 const name = query.split("cumpleaños de")[1].trim();
-                const employee = findEmployeesByCriteria(row => normalize(`${row[4]} ${row[3]}`) === normalize(name))[0];
-                return employee ? `El cumpleaños de ${capitalize(name)} es el ${employee[5]}` : `No se encontró información para ${name}`;
+                const employee = findEmployeesByCriteria(row => 
+                    normalize(`${row[4]} ${row[3]}`) === normalize(name))[0];
+                return employee ? 
+                    `El cumpleaños de ${capitalize(name)} es el ${formatDate(employee[13])}` : 
+                    `No se encontró información para ${name}`;
             }
 
             if (query.includes("cargo ocupa")) {
                 const name = query.split("cargo ocupa")[1].trim();
-                const employee = findEmployeesByCriteria(row => normalize(`${row[4]} ${row[3]}`) === normalize(name))[0];
-                return employee ? `${capitalize(name)} ocupa el cargo de ${employee[10]}` : `No se encontró información para ${name}`;
+                const employee = findEmployeesByCriteria(row => 
+                    normalize(`${row[4]} ${row[3]}`) === normalize(name))[0];
+                return employee ? `${capitalize(name)} ocupa el cargo de ${employee[10]}` : // Cargo (índice 10)
+                    `No se encontró información para ${name}`;
             }
 
             // Si no se encuentra una consulta específica, realizar una búsqueda general
             const matches = findEmployeesByCriteria(row => 
                 normalize(`${row[4]} ${row[3]}`).includes(normalize(query)) ||
                 normalize(row[10]).includes(normalize(query)) ||
-                normalize(row[8]).includes(normalize(query)) ||
-                normalize(row[7]).includes(normalize(query))
+                normalize(row[7]).includes(normalize(query)) ||
+                normalize(row[6]).includes(normalize(query))
             );
 
             if (matches.length > 0) {
                 return `Encontré ${matches.length} resultado(s) que coinciden con tu búsqueda:\n${matches.map(row => 
-                    `${capitalize(row[4])} ${capitalize(row[3])}: ${row[10]} - ${row[8]} (${row[7]})`
+                    `${capitalize(row[4])} ${capitalize(row[3])}: ${row[10]} - ${row[7]} (${row[6]})`
                 ).join("\n")}`;
             } else {
                 return "No se encontraron resultados para tu búsqueda. Por favor, intenta con términos más generales o verifica la ortografía.";
@@ -232,3 +265,19 @@ export async function getPayrollData(userId: string, query: string, userName: st
         throw error;
     }
 }
+
+// Función para formatear la fecha
+const formatDate = (dateStr: string) => {
+    // Asumiendo que la fecha viene en formato DD/MM/YYYY
+    const [day, month, year] = dateStr.split('/');
+    return `${day} de ${getMonthName(parseInt(month))} de ${year}`;
+};
+
+// Función para obtener el nombre del mes
+const getMonthName = (month: number): string => {
+    const months = [
+        'enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio',
+        'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'
+    ];
+    return months[month - 1];
+};

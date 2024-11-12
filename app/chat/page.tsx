@@ -191,23 +191,6 @@ function ChatContent() {
                 </div>
               </div>
             ))}
-            {/* Indicador "Bot is typing..." */}
-            {isBotResponding && (
-              <div className="whitespace-pre-wrap flex justify-start">
-                <div
-                  className="p-3 rounded-lg shadow-lg bg-gray-700 text-white"
-                  style={{
-                    maxWidth: '80%',
-                    minWidth: '150px',
-                    minHeight: '50px',
-                    borderRadius: '15px',
-                  }}
-                >
-                  <div className="font-bold text-blue-300">Onwy</div>
-                  <p className="mt-1 italic">Bot is typing...</p>
-                </div>
-              </div>
-            )}
 
             {/* Ref para el auto-scroll */}
             <div ref={messagesEndRef} />
