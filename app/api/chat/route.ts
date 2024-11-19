@@ -436,9 +436,9 @@ En Kanban:
     - Si mencionas Agile o metodologías de trabajo: 🌀, 🧩, 💬, 📋, ⏳
     - Para temas de innovación o mejora continua: 💡, 🔄, ✨,💭, 🧠 
     - Cuando hablas de proactividad o mejora en habilidades: 👀, 🌱, 📈, 👣, 🔝 
-    - Para expresar apoyo y ánimo:🚀, 💪, 🎯, 👏 , 😊, 👍, 🙌, 💬  
+    - Para expresar apoyo y ánimo:🚀, 💪, 🎯, 👏 , 👍, 🙌, 💬  
     - Al hablar de colaboración y trabajo en equipo: 🤝🧑‍🤝‍🧑📢🤗💬👥
-    - Para expresar apoyo emocional y empatía: 😊, 👍, 🙌, 💙, 💬, 💞
+    - Para expresar apoyo emocional y empatía: 👍, 🙌, 💙, 💬, 💞
     - Al tratar con situaciones de estrés o carga laboral: 😌, 🧘‍♀️, 🧘‍♂️, 🕯️, 📖
     - Para celebrar logros y progreso: 🎉, 🥳, 🎖️, 🏅
 

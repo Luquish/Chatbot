@@ -21,13 +21,37 @@ function ChatContent() {
     const searchParams = useSearchParams();
     const isExtension = searchParams.get('extension') === 'true';
     const [isBotResponding, setIsBotResponding] = useState(false);
-    const { messages, input, handleInputChange, handleSubmit, append } = useChat({
+    const [pendingMessage, setPendingMessage] = useState<string>('');
+    const [displayedContent, setDisplayedContent] = useState<string>('');
+    const [isTyping, setIsTyping] = useState(false);
+    const { messages: rawMessages, input, handleInputChange, handleSubmit, append } = useChat({
       maxToolRoundtrips: 2,
       onResponse: () => {
         setIsBotResponding(true);
+        setPendingMessage('');
       },
-      onFinish: () => {
+      onFinish: (message) => {
         setIsBotResponding(false);
+        setPendingMessage('');
+        // Iniciar efecto de typing cuando el mensaje está completo
+        if (message.role === 'assistant') {
+          setIsTyping(true);
+          setDisplayedContent('');
+          let index = 0;
+          const text = message.content;
+          
+          const typingInterval = setInterval(() => {
+            setDisplayedContent((prev) => {
+              if (index < text.length) {
+                index++;
+                return text.slice(0, index);
+              }
+              clearInterval(typingInterval);
+              setIsTyping(false);
+              return text;
+            });
+          }, 20); // Ajusta esta velocidad según prefieras
+        }
       },
     });
     const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -45,12 +69,12 @@ function ChatContent() {
       if (messagesEndRef.current) {
         messagesEndRef.current.scrollIntoView({ behavior: 'smooth' });
       }
-    }, [messages]);
+    }, [rawMessages]);
 
     useEffect(() => {
-      if (messages.length >= 2) {
-        const lastMessage = messages[messages.length - 1];
-        const previousMessage = messages[messages.length - 2];
+      if (rawMessages.length >= 2) {
+        const lastMessage = rawMessages[rawMessages.length - 1];
+        const previousMessage = rawMessages[rawMessages.length - 2];
         
         if (lastMessage.role !== 'user' && previousMessage.role === 'user' && !showFeedback) {
           setCurrentFeedbackMessage({
@@ -60,7 +84,7 @@ function ChatContent() {
           setShowFeedback(true);
         }
       }
-    }, [messages, showFeedback]);
+    }, [rawMessages, showFeedback]);
 
     if (status === 'loading') {
       return <div>Loading...</div>;
@@ -113,6 +137,25 @@ function ChatContent() {
         router.push('/');
     };
 
+    // Filtrar y procesar mensajes para incluir el mensaje pendiente
+    const messages = rawMessages
+      .filter(m => !m.content.startsWith('__PROACTIVE_TRIGGER__'))
+      .filter(m => m.content.length > 0 && !m.content.startsWith('calling tool:'))
+      .map(m => {
+        if (m.role === 'assistant' && m === rawMessages[rawMessages.length - 1]) {
+          if (isBotResponding) {
+            return null;
+          }
+          // Mostrar el contenido con efecto de typing para el último mensaje del asistente
+          return {
+            ...m,
+            content: isTyping ? displayedContent : m.content
+          };
+        }
+        return m;
+      })
+      .filter(Boolean) as ChatMessage[];
+
   // Renderizado del componente
   return (
     <div className={`flex flex-col items-center justify-center w-full ${isExtension ? 'h-full' : 'h-screen'}`} style={{ backgroundColor: '#1E1E1E' }}>
@@ -135,10 +178,7 @@ function ChatContent() {
         {/* Mensajes */}
         <div className="flex-1 p-6 overflow-y-auto text-white" style={{ marginRight: '-17px', paddingRight: '17px' }}>
           <div className="space-y-4">
-          {messages
-            .filter(m => !m.content.startsWith('__PROACTIVE_TRIGGER__'))
-            .filter(m => m.content.length > 0 && !m.content.startsWith('calling tool:'))
-            .map(m => (
+            {messages.map(m => (
               <div
                 key={m.id}
                 className={`whitespace-pre-wrap flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}
@@ -191,6 +231,33 @@ function ChatContent() {
                 </div>
               </div>
             ))}
+
+            {/* Mostrar el indicador de escritura mientras el bot está respondiendo */}
+            {isBotResponding && (
+              <div className="flex justify-start">
+                <div
+                  className="p-3 rounded-lg shadow-lg bg-gray-700 text-white"
+                  style={{
+                    maxWidth: '80%',
+                    minWidth: '150px',
+                    minHeight: '50px',
+                    borderRadius: '15px',
+                  }}
+                >
+                  <div className="font-bold text-blue-300">
+                    Onwy
+                  </div>
+                  <div className="mt-1 flex items-center space-x-1">
+                    <div className="w-1.5 h-1.5 bg-blue-300 rounded-full animate-bounce" 
+                         style={{ animationDelay: '0ms' }}></div>
+                    <div className="w-1.5 h-1.5 bg-blue-300 rounded-full animate-bounce" 
+                         style={{ animationDelay: '150ms' }}></div>
+                    <div className="w-1.5 h-1.5 bg-blue-300 rounded-full animate-bounce" 
+                         style={{ animationDelay: '300ms' }}></div>
+                  </div>
+                </div>
+              </div>
+            )}
 
             {/* Ref para el auto-scroll */}
             <div ref={messagesEndRef} />

@@ -5,7 +5,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useSession } from 'next-auth/react';
 
-const INACTIVITY_SEQUENCE = [5, 5, 15, 15, 30].map(minutes => minutes * 60 * 1000);
+const INACTIVITY_SEQUENCE = [1, 5, 15, 15, 30].map(minutes => minutes * 60 * 1000);
 
 export function ProactiveMessages({ onSendProactiveMessage }: { onSendProactiveMessage: (message: string) => void }) {
   const { data: session } = useSession();
