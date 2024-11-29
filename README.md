@@ -1,3 +1,6 @@
+# Disclaimer
+In case you have received this project as a zip, here is the link to the original repository: https://github.com/Luquish/Chatbot.git
+
 # Vercel AI SDK RAG Guide Starter Project
 
 This is the starter project for the Vercel AI SDK [Retrieval-Augmented Generation (RAG) guide](https://sdk.vercel.ai/docs/guides/rag-chatbot).

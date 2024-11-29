@@ -1,3 +1,6 @@
+# Disclaimer
+En el caso de haber recibido este proyecto como un zip, aca se encuentra el link al repositorio original: https://github.com/Luquish/Chatbot.git
+
 # Vercel AI SDK RAG Guide Starter Project
 
 Este es la guia para el proyecto de [Generación Aumentada por Recuperación (RAG)](https://sdk.vercel.ai/docs/guides/rag-chatbot) del SDK de Vercel AI.
