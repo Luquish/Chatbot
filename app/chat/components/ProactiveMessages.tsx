@@ -31,12 +31,9 @@ export function ProactiveMessages({ onSendProactiveMessage }: { onSendProactiveM
           inactiveTime > INACTIVITY_SEQUENCE[sequenceIndex]) {
         const proactivePrompts = [
           "mostrar eventos proximos (usar getEvent y elegir el proximo evento (dentro de la primera semana a partir de hoy))",
-        //   "recordatorio de tareas pendientes",
           "sugerencia de actividad productiva",
-        //   "consultar que hare hoy",
-        //   "consultar que hice hoy",
-        //   "consultar que hare mañana",
-        //   "consultar que hare el fin de semana",
+          "mostrar eventos proximos (usar getEvent y elegir el proximo evento (dentro de la primera semana a partir de hoy))",
+          "mostrar eventos proximos (usar getEvent y elegir el proximo evento (dentro de la primera semana a partir de hoy))",
         ];
         const randomPrompt = proactivePrompts[Math.floor(Math.random() * proactivePrompts.length)];
         onSendProactiveMessage(randomPrompt);

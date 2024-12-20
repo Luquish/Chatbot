@@ -49,8 +49,41 @@ export async function POST(req: Request) {
 
   if (lastMessage.role === 'user' && lastMessage.content.startsWith('__PROACTIVE_TRIGGER__')) {
     proactivePrompt = lastMessage.content.replace('__PROACTIVE_TRIGGER__', '');
-    // Excluir el último mensaje (trigger proactivo) de los mensajes a enviar
     messagesToSend = messages.slice(0, -1);
+
+    // Manejar el caso específico de mostrar eventos próximos
+    if (proactivePrompt === 'mostrar eventos proximos (usar getEvent y elegir el proximo evento (dentro de la primera semana a partir de hoy))') {
+      const today = new Date();
+      const nextWeek = new Date(today);
+      nextWeek.setDate(today.getDate() + 7);
+      
+      const events = await getEvents(userId, today, nextWeek);
+      
+      if ('error' in events) {
+        messagesToSend.push({
+          role: 'assistant',
+          content: 'Lo siento, no pude obtener tus eventos próximos. ' + events.error
+        });
+      } else if (events.length === 0) {
+        messagesToSend.push({
+          role: 'assistant',
+          content: 'No tienes eventos programados para la próxima semana. 📅'
+        });
+      } else {
+        // Ordenar eventos por fecha y tomar el más próximo
+        const nextEvent = events.sort((a, b) => 
+          new Date(a.startTime).getTime() - new Date(b.startTime).getTime()
+        )[0];
+
+        const eventDate = new Date(nextEvent.startTime);
+        const formattedDate = format(eventDate, "EEEE, d 'de' MMMM 'a las' HH:mm", { locale: es });
+        
+        messagesToSend.push({
+          role: 'assistant',
+          content: `Tu próximo evento es "${nextEvent.name}" el ${formattedDate} 📅`
+        });
+      }
+    }
   }
 
   console.log('Received messages:', messagesToSend);
@@ -102,11 +135,12 @@ export async function POST(req: Request) {
 
     Para problemas de desempeño, falta de trabajo en equipo, baja motivación, o cualquier aspecto relevante, recuérdale al usuario la competencia correspondiente de forma amigable.
     Ejemplo general: "Recordá que en [Nombre de la Empresa] nos caracterizamos por [Competencia]. Esto puede ayudarte a mejorar en [Área de Mejora]."
-    Recomendación de Recursos:
+    Recomendación de cursos:
 
-    Cuando el usuario necesite ayuda adicional, sugiere recursos o formaciones internas (por ejemplo, cursos de Onwip Academy) alineados con las competencias en las que necesita mejorar.
+    Cuando el usuario necesite ayuda adicional, sugiere cursos o formaciones internas (por ejemplo, cursos de Onwip Academy) alineados con las competencias en las que necesita mejorar.
     Ejemplo general: "Si te interesa mejorar en [Competencia], te recomiendo el curso [Nombre del Curso]. Puede ser útil para desarrollar esta habilidad."
     Asegúrate de que las recomendaciones y recordatorios sean específicos, claros y relevantes, para mantener el enfoque en las metas de la empresa y fomentar el crecimiento de cada empleado en la cultura organizacional.
+    Si el usuario utiliza la palabra "eficiente" enviale el curso de reuniones eficientes.
 
     Respuestas de Amabilidad:
 
@@ -596,17 +630,7 @@ En Kanban:
     Mensajes Proactivos:
     - Si el usuario te pide "__PROACTIVE_TRIGGER__sugerencia de actividad productiva", usa la herramienta getInformation para buscar en la base de conocimientos y ofrecer sugerencias de actividades productivas.
 
-    - Si el usuario te pide "__PROACTIVE_TRIGGER__mostrar eventos proximos (usar getEvent y elegir el proximo evento (dentro de la primera semana a partir de hoy))", hacelo.
-
-    - Si el usuario te pide "__PROACTIVE_TRIGGER__consultar que hare hoy", preguntale al usuario va a hacer hoy y ofrecer sugerencias de actividades productivas.
-
-    - Si el usuario te pide "__PROACTIVE_TRIGGER__consultar que hice hoy", preguntale al usuario que hizo hoy y ofrecer sugerencias de actividades productivas.
-
-    - Si el usuario te pide "__PROACTIVE_TRIGGER__consultar que hare mañana", preguntale al usuario que va a hacer mañana y ofrecer sugerencias de actividades productivas.
-
-    - Si el usuario te pide "__PROACTIVE_TRIGGER__consultar que hare el fin de semana", preguntale al usuario que va a hacer el fin de semana y ofrecer sugerencias de actividades productivas.
-
-    - Si el usuario te pide "__PROACTIVE_TRIGGER__recordatorio de tareas pendientes", usa la herramienta getInformation para buscar en la base de conocimientos y ofrecer sugerencias de actividades productivas.
+    - Si recibis "__PROACTIVE_TRIGGER__mostrar eventos proximos (usar getEvent y elegir el proximo evento (dentro de la primera semana a partir de hoy))", usa getEvent y elegir el proximo evento (dentro de la primera semana a partir de hoy).
 `,
 
     tools: {
