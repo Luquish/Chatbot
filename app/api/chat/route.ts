@@ -705,14 +705,19 @@ En Kanban:
         },
       }),
       checkAvailability: tool({
-          description: `Verifica la disponibilidad de uno o más usuarios para una reunión en un horario específico. Usa este método cuando el usuario necesita confirmar la disponibilidad antes de proponer un horario.`,
-          parameters: z.object({
-            otherUserEmail: z.string().optional().describe('Email del otro usuario (opcional)'),
-            date: z.string().describe('Fecha específica'),
-            time: z.string().optional().describe('Hora específica (opcional)'),
-          }),
-          execute: async ({ otherUserEmail, date, time }) => checkAvailability(userId, otherUserEmail || 'me', date, time),
+        description: `Verifica la disponibilidad en el calendario. Usar cuando:
+        - El usuario pregunta por su disponibilidad ("¿Qué disponibilidad tengo?")
+        - El usuario quiere saber si tiene espacio en su calendario
+        - El usuario pregunta por horarios libres
+        - El usuario quiere verificar disponibilidad con otros usuarios
+        Requiere una fecha (puede ser "mañana", "viernes", etc.) y opcionalmente un email y hora.`,
+        parameters: z.object({
+          otherUserEmail: z.string().optional().describe('Email del otro usuario (opcional)'),
+          date: z.string().describe('Fecha específica'),
+          time: z.string().optional().describe('Hora específica (opcional)'),
         }),
+        execute: async ({ otherUserEmail, date, time }) => checkAvailability(userId, otherUserEmail || 'me', date, time),
+      }),
       deleteEventByTitle: tool({
           description: `Eliminar un evento del calendario por su título`,
           parameters: z.object({

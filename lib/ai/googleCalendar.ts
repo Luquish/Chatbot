@@ -3,7 +3,7 @@ import { accounts } from '../db/schema/schemas';
 import { eq } from 'drizzle-orm';
 import { db } from '../db';
 import { DateTime } from 'luxon';
-import { format, startOfDay, isBefore } from 'date-fns';
+import { format, startOfDay, isBefore, parse } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { users } from '../db/schema/schemas';
 
@@ -282,52 +282,6 @@ export async function getEvents(userId: string, startDate?: Date, endDate?: Date
   }
 }
 
-function findAvailableSlots(startDate: Date, endDate: Date, busySlots: Array<{ start: Date; end: Date }>) {
-  const availableSlots: Array<{ start: Date; end: Date }> = [];
-  let currentDate = startOfDay(startDate);
-
-  while (isBefore(currentDate, endDate)) {
-    // Solo considerar horario laboral (8 AM - 5 PM)
-    const workDayStart = new Date(currentDate);
-    workDayStart.setHours(8, 0, 0);
-    const workDayEnd = new Date(currentDate);
-    workDayEnd.setHours(17, 0, 0);
-
-    // Filtrar eventos del día actual
-    const dayEvents = busySlots.filter(slot => {
-      const slotDate = startOfDay(slot.start);
-      return slotDate.getTime() === currentDate.getTime();
-    }).sort((a, b) => a.start.getTime() - b.start.getTime());
-
-    let slotStart = workDayStart;
-
-    if (dayEvents.length === 0) {
-      // Si no hay eventos, todo el día está disponible
-      availableSlots.push({ start: workDayStart, end: workDayEnd });
-    } else {
-      // Procesar cada evento y encontrar los espacios libres entre ellos
-      for (const event of dayEvents) {
-        if (event.start > slotStart && event.start <= workDayEnd) {
-          // Agregar slot disponible antes del evento si hay al menos 30 minutos
-          if (event.start.getTime() - slotStart.getTime() >= 30 * 60 * 1000) {
-            availableSlots.push({ start: slotStart, end: event.start });
-          }
-        }
-        slotStart = new Date(Math.max(event.end.getTime(), slotStart.getTime()));
-      }
-
-      // Agregar slot después del último evento si queda tiempo
-      if (slotStart < workDayEnd) {
-        availableSlots.push({ start: slotStart, end: workDayEnd });
-      }
-    }
-
-    currentDate.setDate(currentDate.getDate() + 1);
-  }
-
-  return availableSlots;
-}
-
 // Función para obtener slots disponibles para un día específico
 export async function getAvailableSlots(userId: string, date: string, otherUserEmail?: string): Promise<string[]> {
   try {
@@ -432,9 +386,47 @@ function selectDistributedSlots(slots: Array<{ start: Date; end: Date }>) {
   return result.slice(0, 5);
 }
 
-// Modificar checkAvailability para manejar automáticamente el email del usuario actual
 export async function checkAvailability(userId: string, otherUserEmail: string, date: string, time?: string): Promise<string[]> {
   try {
+    console.log('CheckAvailability input:', { date, time, otherUserEmail });
+    
+    // Crear la fecha usando DateTime de luxon para manejar mejor las zonas horarias
+    const timeZone = 'America/Argentina/Buenos_Aires';
+    let parsedDate: DateTime;
+    
+    if (/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+      console.log('Using YYYY-MM-DD format');
+      parsedDate = DateTime.fromISO(date, { zone: timeZone });
+    } else {
+      console.log('Attempting to parse natural date:', date);
+      try {
+        const parsedJsDate = parse(date, "EEEE, d 'de' MMMM 'de' yyyy", new Date(), { locale: es });
+        parsedDate = DateTime.fromJSDate(parsedJsDate, { zone: timeZone });
+        
+        if (!parsedDate.isValid) {
+          const parsedJsDateNoYear = parse(date, "EEEE, d 'de' MMMM", new Date(), { locale: es });
+          parsedDate = DateTime.fromJSDate(parsedJsDateNoYear, { zone: timeZone });
+        }
+      } catch (error) {
+        console.error('Parse error:', error);
+        return ['Error: No se pudo interpretar la fecha proporcionada'];
+      }
+    }
+
+    if (!parsedDate.isValid) {
+      return ['Error: Fecha inválida'];
+    }
+
+    // Configurar el día laboral usando la zona horaria correcta
+    const startDate = parsedDate.set({ hour: 8, minute: 0 }).toJSDate();
+    const endDate = parsedDate.set({ hour: 17, minute: 0 }).toJSDate();
+
+    console.log('Configured dates:', {
+      parsedDate: parsedDate.toISO(),
+      startDate: startDate.toISOString(),
+      endDate: endDate.toISOString()
+    });
+
     // Si otherUserEmail es "me" o está vacío, obtener el email del usuario actual
     if (!otherUserEmail || otherUserEmail === 'me') {
       const currentUser = await db.select().from(users).where(eq(users.id, userId)).limit(1).execute();
@@ -447,59 +439,139 @@ export async function checkAvailability(userId: string, otherUserEmail: string, 
       otherUserEmail = currentUser[0].email;
     }
 
-    const userAccount = await db.select().from(accounts).where(eq(accounts.userId, userId)).limit(1).execute();
-    if (!userAccount || userAccount.length === 0) {
-      return ['No se encontró la cuenta del usuario.'];
-    }
-
-    const startDate = new Date(date);
+    // Si se proporciona una hora específica, ajustar el rango de búsqueda
     if (time) {
-      const [hour, minute] = time.split(':').map(Number);
-      startDate.setHours(hour, minute);
+      const [hours, minutes] = time.split(':').map(Number);
+      if (isNaN(hours) || isNaN(minutes)) {
+        return ['Error: El formato de hora debe ser HH:MM'];
+      }
+      
+      startDate.setHours(hours, minutes, 0, 0);
+      const endTime = new Date(startDate);
+      endTime.setHours(endTime.getHours() + 1); // Ventana de 1 hora
+      
+      if (startDate.getHours() < 8 || startDate.getHours() >= 17) {
+        return ['Error: La hora debe estar entre las 8:00 y las 17:00'];
+      }
     }
-    const endDate = new Date(startDate);
-    endDate.setHours(endDate.getHours() + 1); // Asumir una duración de 1 hora para la reunión
 
+    // Obtener eventos del usuario actual
+    const userEvents = await getEvents(userId, startDate, endDate);
+    if ('error' in userEvents) {
+      return ['Error al obtener eventos del calendario del usuario actual.'];
+    }
+
+    // Obtener eventos del otro usuario
     const otherUser = await db.select().from(users).where(eq(users.email, otherUserEmail)).limit(1).execute();
     if (!otherUser || otherUser.length === 0) {
       return [`No se encontró el usuario con email ${otherUserEmail} en el sistema.`];
     }
 
-    // Obtener eventos del otro usuario
     const otherUserEvents = await getEvents(otherUser[0].id, startDate, endDate);
     if ('error' in otherUserEvents) {
-      return ['Error al obtener eventos del calendario.'];
+      return ['Error al obtener eventos del calendario del otro usuario.'];
     }
 
-    const busySlots = otherUserEvents.map(event => ({
+    // Combinar y ordenar todos los eventos
+    const allEvents = [...userEvents, ...otherUserEvents].map(event => ({
       start: new Date(event.startTime),
-      end: new Date(event.endTime),
-    }));
+      end: new Date(event.endTime)
+    })).sort((a, b) => a.start.getTime() - b.start.getTime());
 
-    // Obtener eventos del usuario actual
-    const userEvents = await getEvents(userId, startDate, endDate);
-    if ('error' in userEvents) {
-      return ['Error al obtener eventos del calendario.'];
+    // Si se especificó una hora, verificar disponibilidad específica
+    if (time) {
+      const isTimeSlotAvailable = !allEvents.some(event => 
+        (startDate >= event.start && startDate < event.end) || 
+        (new Date(startDate.getTime() + 60 * 60 * 1000) > event.start && 
+         new Date(startDate.getTime() + 60 * 60 * 1000) <= event.end)
+      );
+
+      if (isTimeSlotAvailable) {
+        return [`Horario disponible: ${startDate.toLocaleTimeString()} - ${new Date(startDate.getTime() + 60 * 60 * 1000).toLocaleTimeString()}`];
+      } else {
+        return ['El horario solicitado no está disponible.'];
+      }
     }
 
-    // Agregar eventos del usuario actual a los slots ocupados
-    busySlots.push(...userEvents.map(event => ({
-      start: new Date(event.startTime),
-      end: new Date(event.endTime),
-    })));
-
-    // Encontrar slots disponibles
-    const availableSlots = findAvailableSlots(startDate, endDate, busySlots);
-
+    // Encontrar slots disponibles para el día completo
+    const availableSlots = findAvailableSlots(startDate, endDate, allEvents);
+    
     if (availableSlots.length === 0) {
-      return ['No hay espacios disponibles en el día seleccionado.'];
+      return ['No hay horarios disponibles en el día seleccionado.'];
     }
 
-    return availableSlots.map(slot => `Disponible: ${slot.start.toLocaleTimeString()} - ${slot.end.toLocaleTimeString()}`);
+    // Formatear los slots disponibles
+    return availableSlots.map(slot => {
+      const startTime = format(slot.start, 'HH:mm', { locale: es });
+      const endTime = format(slot.end, 'HH:mm', { locale: es });
+      return `Disponible: ${startTime} - ${endTime}`;
+    });
+
   } catch (error) {
     console.error('Error checking availability:', error);
     return ['Error al verificar la disponibilidad.'];
   }
+}
+
+// Función auxiliar mejorada para encontrar slots disponibles
+function findAvailableSlots(
+  startDate: Date, 
+  endDate: Date, 
+  busySlots: Array<{ start: Date; end: Date }>
+): Array<{ start: Date; end: Date }> {
+  const availableSlots: Array<{ start: Date; end: Date }> = [];
+  let currentTime = new Date(startDate);
+
+  // Ordenar los slots ocupados cronológicamente
+  const sortedBusySlots = busySlots
+    .sort((a, b) => a.start.getTime() - b.start.getTime())
+    .filter(slot => {
+      // Solo eventos que se superponen con el horario laboral del día
+      return slot.start < endDate && slot.end > startDate;
+    });
+
+  console.log('Sorted busy slots:', sortedBusySlots.map(slot => ({
+    start: slot.start.toLocaleTimeString(),
+    end: slot.end.toLocaleTimeString()
+  })));
+
+  // Si no hay eventos, todo el día está disponible
+  if (sortedBusySlots.length === 0) {
+    availableSlots.push({ start: startDate, end: endDate });
+    return availableSlots;
+  }
+
+  // Verificar si hay espacio antes del primer evento
+  if (currentTime < sortedBusySlots[0].start) {
+    availableSlots.push({
+      start: currentTime,
+      end: new Date(sortedBusySlots[0].start)
+    });
+  }
+
+  // Buscar espacios entre eventos
+  for (let i = 0; i < sortedBusySlots.length - 1; i++) {
+    const currentEnd = sortedBusySlots[i].end;
+    const nextStart = sortedBusySlots[i + 1].start;
+    
+    if (currentEnd < nextStart) {
+      availableSlots.push({
+        start: new Date(currentEnd),
+        end: new Date(nextStart)
+      });
+    }
+  }
+
+  // Verificar si hay espacio después del último evento
+  const lastEvent = sortedBusySlots[sortedBusySlots.length - 1];
+  if (lastEvent.end < endDate) {
+    availableSlots.push({
+      start: new Date(lastEvent.end),
+      end: new Date(endDate)
+    });
+  }
+
+  return availableSlots;
 }
 
 export async function deleteEventByTitle(userId: string, eventTitle: string) {
