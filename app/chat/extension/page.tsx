@@ -64,7 +64,7 @@ export default function ChatPlugin() {
   }
 
   return (
-    <div className="flex flex-col w-full h-screen bg-gray-900">
+    <div className="flex flex-col w-screen h-screen bg-gray-900">
       <div 
         ref={chatContainerRef}
         className="flex-1 overflow-y-auto scrollbar-thin scrollbar-thumb-gray-600 scrollbar-track-gray-800"
@@ -113,16 +113,16 @@ export default function ChatPlugin() {
         </div>
       </div>
 
-      <div className="flex justify-center space-x-4 p-4 bg-gray-800">
-        <div className="relative">
+      <div className="flex justify-center p-4 bg-gray-800">
+        <div className="relative w-full max-w-[calc(100%-2rem)]">
           <button
             onClick={() => setCalendarMenuVisible(!calendarMenuVisible)}
-            className="flex items-center justify-center w-32 h-8 bg-white text-black rounded-full hover:bg-[#8B4CFF] hover:text-white transition-colors duration-200"
+            className="flex items-center justify-center w-full h-8 bg-white text-black rounded-full hover:bg-[#8B4CFF] hover:text-white transition-colors duration-200"
           >
             📅 <span className="ml-2 text-xs">Calendario</span>
           </button>
           {calendarMenuVisible && (
-            <div className="absolute bottom-12 left-0 bg-gray-800 text-white rounded-lg shadow-lg w-48 p-2">
+            <div className="absolute bottom-12 left-0 bg-gray-800 text-white rounded-lg shadow-lg w-full p-2">
               <button
                 className="w-full p-2 text-left hover:bg-gray-600"
                 onClick={() => {
@@ -144,44 +144,6 @@ export default function ChatPlugin() {
             </div>
           )}
         </div>
-
-        <div className="relative">
-          <button
-            onClick={() => setMeetingMenuVisible(!meetingMenuVisible)}
-            className="flex items-center justify-center w-32 h-8 bg-white text-black rounded-full hover:bg-[#8B4CFF] hover:text-white transition-colors duration-200"
-          >
-            📞 <span className="ml-2 text-xs">Reunión</span>
-          </button>
-          {meetingMenuVisible && (
-            <div className="absolute bottom-12 left-0 bg-gray-800 text-white rounded-lg shadow-lg w-48 p-2">
-              <button
-                className="w-full p-2 text-left hover:bg-gray-600"
-                onClick={() => {
-                  sendAutoMessage("Me podrías agendar una reunión")
-                  setMeetingMenuVisible(false)
-                }}
-              >
-                Agendar reunión
-              </button>
-              <button
-                className="w-full p-2 text-left hover:bg-gray-600"
-                onClick={() => {
-                  sendAutoMessage("Estoy teniendo problemas para preparar y agendar reuniones lo más eficientemente posible")
-                  setMeetingMenuVisible(false)
-                }}
-              >
-                Ayuda
-              </button>
-            </div>
-          )}
-        </div>
-
-        <button
-          className="flex items-center justify-center w-32 h-8 bg-white text-black rounded-full hover:bg-[#8B4CFF] hover:text-white transition-colors duration-200"
-          onClick={() => sendAutoMessage("Quiero aprender algo sobre cursos")}
-        >
-          📚 <span className="ml-2 text-xs">Cursos</span>
-        </button>
       </div>
 
       <form onSubmit={handleUserMessage} className="p-4 bg-gray-800">
